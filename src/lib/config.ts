@@ -17,9 +17,9 @@ export const AGENT_CONFIG = {
   // Company Exclusion: Companies to skip if found
   excludedCompanies: ['Amazon', 'Facebook', 'Meta', 'Google'] as string[],
   
-  // Search recency (Google search 'after:' operator)
-  searchAfterDate: '2025-04-01',
+  // Search recency window in days (used to build the Google `after:` filter)
+  searchLookbackDays: 14,
   
   // Sync Frequency (display only, actual schedule is in vercel.json)
-  syncFrequencyHours: 6,
+  syncFrequencyHours: 24,
 };
