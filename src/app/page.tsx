@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { RefreshCcw, Filter, Loader2, Sparkles, CheckCheck } from "lucide-react";
+import { RefreshCcw, Filter, Loader2, Sparkles, CheckCheck, MapPin, Briefcase } from "lucide-react";
 import { Job } from "@/lib/types";
 import { useUserId } from "@/hooks/useUserId";
 import JobCard from "@/components/JobCard";
@@ -11,6 +11,12 @@ export default function Home() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  
+  // Search Inputs (Hardcoded for search/scraping)
+  const [searchRole, setSearchRole] = useState("Software Engineer");
+  const [searchLocation, setSearchLocation] = useState("Remote");
+
+  // View Filters (Applied to discovered jobs)
   const [filter, setFilter] = useState({
     industry: "all",
     stage: "all",
@@ -43,14 +49,15 @@ export default function Home() {
   const handleSync = useCallback(async () => {
     setSyncing(true);
     try {
-      await fetch("/api/cron/sync");
+      // Pass the hard-coded typed inputs to the sync route
+      await fetch(`/api/cron/sync?role=${encodeURIComponent(searchRole)}&location=${encodeURIComponent(searchLocation)}`);
       await fetchJobs();
     } catch (err) {
       console.error(err);
     } finally {
       setSyncing(false);
     }
-  }, [fetchJobs]);
+  }, [fetchJobs, searchRole, searchLocation]);
 
   const handleDismiss = useCallback(async (jobId: string) => {
     setJobs((prev) => prev.filter((j) => j.id !== jobId));
@@ -84,72 +91,92 @@ export default function Home() {
   return (
     <main className="max-w-7xl mx-auto px-6 py-12 relative">
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8 mb-16">
         <div>
           <h1 className="text-4xl md:text-5xl font-black font-outfit uppercase tracking-tighter text-white mb-2 flex items-center gap-3">
             <Sparkles className="text-blue-500 w-10 h-10" /> JobScout <span className="text-blue-500">Agent</span>
           </h1>
-          <p className="text-zinc-500 font-medium">Automated intelligence for your next career move.</p>
+          <p className="text-zinc-500 font-medium">Search across LinkedIn, Greenhouse, and Lever automatically.</p>
         </div>
-        <button
-          onClick={handleSync}
-          disabled={syncing}
-          className="bg-white text-black px-6 py-3 rounded-xl font-bold hover:bg-zinc-200 transition-colors flex items-center gap-2 disabled:opacity-50"
-        >
-          {syncing ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCcw className="w-5 h-5" />}
-          Sync New Postings
-        </button>
+
+        {/* Search Inputs Section */}
+        <div className="flex flex-col sm:flex-row items-center gap-3 bg-white/5 p-2 rounded-2xl border border-white/10 w-full lg:w-auto">
+          <div className="relative w-full sm:w-64">
+            <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+            <input 
+              type="text"
+              placeholder="Target Role (e.g. AI Engineer)"
+              className="bg-zinc-900/50 border border-white/5 rounded-xl pl-10 pr-4 py-3 text-sm text-white outline-none focus:ring-2 focus:ring-blue-500/50 w-full"
+              value={searchRole}
+              onChange={(e) => setSearchRole(e.target.value)}
+            />
+          </div>
+          <div className="relative w-full sm:w-64">
+            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+            <input 
+              type="text"
+              placeholder="Location (e.g. Remote, SF)"
+              className="bg-zinc-900/50 border border-white/5 rounded-xl pl-10 pr-4 py-3 text-sm text-white outline-none focus:ring-2 focus:ring-blue-500/50 w-full"
+              value={searchLocation}
+              onChange={(e) => setSearchLocation(e.target.value)}
+            />
+          </div>
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-500 transition-all flex items-center gap-2 disabled:opacity-50 whitespace-nowrap w-full sm:w-auto shadow-lg shadow-blue-600/20"
+          >
+            {syncing ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCcw className="w-5 h-5" />}
+            Sync Agent
+          </button>
+        </div>
       </div>
 
       {/* Filters Bar */}
       <div className="bg-white/5 border border-white/10 rounded-2xl p-4 mb-8 flex flex-wrap gap-4 items-center">
         <div className="flex items-center gap-2 text-zinc-400 text-sm font-semibold mr-4 px-2 border-r border-white/10">
-          <Filter className="w-4 h-4" /> FILTERS
+          <Filter className="w-4 h-4" /> VIEW FILTERS
         </div>
         
-        {/* Industry Filter */}
         <select 
           className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500/50 min-w-[140px]"
           value={filter.industry}
           onChange={(e) => setFilter(f => ({...f, industry: e.target.value}))}
         >
-          <option value="all">Industries ({industries.length})</option>
+          <option value="all">Any Industry ({industries.length})</option>
           {industries.map(ind => <option key={ind} value={ind!}>{ind}</option>)}
         </select>
 
-        {/* Stage Filter */}
         <select 
           className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500/50 min-w-[140px]"
           value={filter.stage}
           onChange={(e) => setFilter(f => ({...f, stage: e.target.value}))}
         >
-          <option value="all">Company Stages ({stages.length})</option>
+          <option value="all">Any Stage ({stages.length})</option>
           {stages.map(stage => <option key={stage} value={stage!}>{stage}</option>)}
         </select>
 
-        {/* Location Filter */}
         <select 
           className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500/50 min-w-[140px]"
           value={filter.location}
           onChange={(e) => setFilter(f => ({...f, location: e.target.value}))}
         >
-          <option value="all">Locations ({locations.length})</option>
+          <option value="all">Discovered Locs ({locations.length})</option>
           {locations.map(loc => <option key={loc} value={loc!}>{loc}</option>)}
         </select>
 
-        {/* Company Filter */}
         <select 
           className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500/50 min-w-[140px]"
           value={filter.company}
           onChange={(e) => setFilter(f => ({...f, company: e.target.value}))}
         >
-          <option value="all">Companies ({companies.length})</option>
+          <option value="all">Any Company ({companies.length})</option>
           {companies.map(comp => <option key={comp} value={comp!}>{comp}</option>)}
         </select>
 
         <div className="flex-1" />
         <div className="text-zinc-500 text-xs font-mono uppercase tracking-widest bg-white/5 px-3 py-1 rounded-full border border-white/5">
-          {filteredJobs.length} active leads
+          {filteredJobs.length} results
         </div>
       </div>
 
@@ -170,16 +197,16 @@ export default function Home() {
           <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-6">
             <CheckCheck className="w-8 h-8 text-zinc-600" />
           </div>
-          <h2 className="text-2xl font-bold text-white mb-2 uppercase tracking-tight">Inbox Zero</h2>
-          <p className="text-zinc-500 max-w-md">All current job postings have been processed or filtered. Click sync to check for new opportunities.</p>
+          <h2 className="text-2xl font-bold text-white mb-2 uppercase tracking-tight">No Leads Found</h2>
+          <p className="text-zinc-500 max-w-md">Try adjusting your search role or location above and click "Sync Agent" to start a fresh scan.</p>
         </div>
       )}
 
       {/* User Status Bar */}
       <div className="mt-16 pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 text-zinc-600 text-[10px] font-mono tracking-widest uppercase">
         <span>Identity: {userId?.slice(0, 8)}...</span>
-        <span>Auto-Sync Frequency: 24h (Hobby Tier)</span>
-        <span>Agent v1.0.1 Stable</span>
+        <span>Auto-Sync Frequency: 24h</span>
+        <span>Search Core: Serper + Gemini 1.5</span>
       </div>
     </main>
   );
