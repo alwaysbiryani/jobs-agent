@@ -65,7 +65,6 @@ export default function Home() {
         setJobs([]);
       }
       
-      // Check for missing keys in the response or a separate check
       const checkRes = await fetch('/api/cron/sync?check=true');
       const checkData = await checkRes.json();
       setKeysMissing({
@@ -102,12 +101,10 @@ export default function Home() {
   }, [userId]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchJobs();
   }, [fetchJobs]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchPreferences();
   }, [fetchPreferences]);
 
@@ -215,8 +212,9 @@ export default function Home() {
   const sources = useMemo(() => Array.from(new Set(jobs.map((j) => j.source))).sort(), [jobs]);
 
   return (
-    <main className="max-w-7xl mx-auto px-6 py-12 relative">
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8 mb-16">
+    <main className="max-w-7xl mx-auto px-6 py-8 relative">
+      {/* Header */}
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8 mb-10">
         <div>
           <h1 className="text-4xl md:text-5xl font-black font-outfit uppercase tracking-tighter text-white mb-2 flex items-center gap-3">
             <Sparkles className="text-blue-500 w-10 h-10" /> JobScout <span className="text-blue-500">Agent</span>
@@ -227,14 +225,15 @@ export default function Home() {
         <button
           onClick={handleSync}
           disabled={syncing || !userId}
-          className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-500 transition-all flex items-center gap-2 disabled:opacity-50 whitespace-nowrap shadow-lg shadow-blue-600/20"
+          className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-blue-500 transition-all flex items-center gap-2 disabled:opacity-50 whitespace-nowrap shadow-lg shadow-blue-600/20"
         >
           {syncing ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCcw className="w-5 h-5" />}
           Sync Agent
         </button>
       </div>
 
-      <section className="bg-white/5 border border-white/10 rounded-2xl p-5 mb-8">
+      {/* Preferences Setup (Compact) */}
+      <section className="bg-white/5 border border-white/10 rounded-2xl p-4 mb-6">
         <div className="flex items-center gap-2 text-zinc-300 mb-4">
           <Briefcase className="w-4 h-4 text-blue-400" />
           <h2 className="text-sm font-semibold uppercase tracking-wider">Preference Setup</h2>
@@ -246,7 +245,7 @@ export default function Home() {
             <input
               type="text"
               placeholder="Roles (comma separated)"
-              className="bg-zinc-900/50 border border-white/5 rounded-xl pl-10 pr-4 py-3 text-sm text-white outline-none focus:ring-2 focus:ring-blue-500/50 w-full"
+              className="bg-zinc-900/50 border border-white/5 rounded-xl pl-10 pr-4 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-blue-500/50 w-full"
               value={preferencesForm.roles}
               onChange={(e) => setPreferencesForm((prev) => ({ ...prev, roles: e.target.value }))}
             />
@@ -256,7 +255,7 @@ export default function Home() {
             <input
               type="text"
               placeholder="Locations (comma separated)"
-              className="bg-zinc-900/50 border border-white/5 rounded-xl pl-10 pr-4 py-3 text-sm text-white outline-none focus:ring-2 focus:ring-blue-500/50 w-full"
+              className="bg-zinc-900/50 border border-white/5 rounded-xl pl-10 pr-4 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-blue-500/50 w-full"
               value={preferencesForm.locations}
               onChange={(e) => setPreferencesForm((prev) => ({ ...prev, locations: e.target.value }))}
             />
@@ -265,28 +264,28 @@ export default function Home() {
           <input
             type="text"
             placeholder="Work modes (remote, hybrid, onsite)"
-            className="bg-zinc-900/50 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:ring-2 focus:ring-blue-500/50"
+            className="bg-zinc-900/50 border border-white/5 rounded-xl px-4 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-blue-500/50"
             value={preferencesForm.work_modes}
             onChange={(e) => setPreferencesForm((prev) => ({ ...prev, work_modes: e.target.value }))}
           />
           <input
             type="text"
             placeholder="Seniority (junior, senior, staff)"
-            className="bg-zinc-900/50 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:ring-2 focus:ring-blue-500/50"
+            className="bg-zinc-900/50 border border-white/5 rounded-xl px-4 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-blue-500/50"
             value={preferencesForm.seniority}
             onChange={(e) => setPreferencesForm((prev) => ({ ...prev, seniority: e.target.value }))}
           />
           <input
             type="text"
             placeholder="Must-have keywords"
-            className="bg-zinc-900/50 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:ring-2 focus:ring-blue-500/50"
+            className="bg-zinc-900/50 border border-white/5 rounded-xl px-4 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-blue-500/50"
             value={preferencesForm.must_have_keywords}
             onChange={(e) => setPreferencesForm((prev) => ({ ...prev, must_have_keywords: e.target.value }))}
           />
           <input
             type="text"
             placeholder="Excluded keywords"
-            className="bg-zinc-900/50 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:ring-2 focus:ring-blue-500/50"
+            className="bg-zinc-900/50 border border-white/5 rounded-xl px-4 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-blue-500/50"
             value={preferencesForm.excluded_keywords}
             onChange={(e) => setPreferencesForm((prev) => ({ ...prev, excluded_keywords: e.target.value }))}
           />
@@ -304,12 +303,13 @@ export default function Home() {
         </div>
       </section>
 
-      <div className="bg-white/5 border border-white/10 rounded-2xl p-4 mb-4 flex flex-wrap gap-2">
+      {/* Workflow Tabs (Compact) */}
+      <div className="bg-white/5 border border-white/10 rounded-2xl p-3 mb-4 flex flex-wrap gap-2">
         {WORKFLOW_VIEWS.map((option) => (
           <button
             key={option.key}
             onClick={() => setView(option.key)}
-            className={`px-3 py-2 rounded-lg text-xs uppercase tracking-widest border transition-colors ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs uppercase tracking-widest border transition-colors ${
               view === option.key
                 ? "bg-blue-600/30 text-blue-200 border-blue-500/60"
                 : "bg-zinc-900 text-zinc-400 border-white/10 hover:text-zinc-200"
@@ -320,13 +320,14 @@ export default function Home() {
         ))}
       </div>
 
-      <div className="bg-white/5 border border-white/10 rounded-2xl p-4 mb-8 flex flex-wrap gap-4 items-center">
+      {/* View Filters Bar (Compact) */}
+      <div className="bg-white/5 border border-white/10 rounded-2xl p-3 mb-6 flex flex-wrap gap-4 items-center">
         <div className="flex items-center gap-2 text-zinc-400 text-sm font-semibold mr-4 px-2 border-r border-white/10">
           <Filter className="w-4 h-4" /> VIEW FILTERS
         </div>
         
         <select 
-          className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500/50 min-w-[140px]"
+          className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500/50 min-w-[140px]"
           value={filter.role}
           onChange={(e) => setFilter((f) => ({ ...f, role: e.target.value }))}
         >
@@ -339,7 +340,7 @@ export default function Home() {
         </select>
 
         <select 
-          className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500/50 min-w-[140px]"
+          className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500/50 min-w-[140px]"
           value={filter.location}
           onChange={(e) => setFilter((f) => ({ ...f, location: e.target.value }))}
         >
@@ -352,7 +353,7 @@ export default function Home() {
         </select>
 
         <select 
-          className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500/50 min-w-[140px]"
+          className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500/50 min-w-[140px]"
           value={filter.company}
           onChange={(e) => setFilter((f) => ({ ...f, company: e.target.value }))}
         >
@@ -365,7 +366,7 @@ export default function Home() {
         </select>
 
         <select
-          className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500/50 min-w-[140px]"
+          className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500/50 min-w-[140px]"
           value={filter.source}
           onChange={(e) => setFilter((f) => ({ ...f, source: e.target.value }))}
         >
@@ -385,12 +386,12 @@ export default function Home() {
 
       {/* Grid */}
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-24 gap-4">
+        <div className="flex flex-col items-center justify-center py-16 gap-4">
           <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
           <p className="text-zinc-500 font-mono animate-pulse uppercase tracking-[0.2em] text-sm">Consulting Data Streams...</p>
         </div>
       ) : filteredJobs.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredJobs.map((job) => (
             <JobCard
               key={job.id}
@@ -401,12 +402,12 @@ export default function Home() {
           ))}
         </div>
       ) : (
-        <div className="bg-white/[0.02] border-2 border-dashed border-white/10 rounded-3xl py-32 flex flex-col items-center justify-center text-center px-6">
+        <div className="bg-white/[0.02] border-2 border-dashed border-white/10 rounded-3xl py-20 flex flex-col items-center justify-center text-center px-6">
           <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-6">
             <CheckCheck className="w-8 h-8 text-zinc-600" />
           </div>
           <h2 className="text-2xl font-bold text-white mb-2 uppercase tracking-tight">No Leads Found</h2>
-          <p className="text-zinc-500 max-w-md">Try adjusting your search role or location above and click &quot;Sync Agent&quot; to start a fresh scan.</p>
+          <p className="text-zinc-500 max-w-md">Try adjusting your preferences above and click &quot;Sync Agent&quot; to start a fresh scan.</p>
         </div>
       )}
 
@@ -426,7 +427,7 @@ export default function Home() {
       )}
 
       {/* User Status Bar */}
-      <div className="mt-16 pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 text-zinc-600 text-[10px] font-mono tracking-widest uppercase">
+      <div className="mt-10 pt-6 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 text-zinc-600 text-[10px] font-mono tracking-widest uppercase">
         <span>Identity: {userId?.slice(0, 8)}...</span>
         <span>Auto-Sync Frequency: 24h</span>
         <span>Search Core: Serper + Gemini + Workflow Views</span>

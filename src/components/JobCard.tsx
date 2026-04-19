@@ -24,10 +24,10 @@ export default function JobCard({ job, onAction, pendingAction }: JobCardProps) 
   const isPending = (action: string) => pendingAction === `${job.id}:${action}`;
 
   return (
-    <div className="bg-white/5 border border-white/10 rounded-xl p-6 hover:bg-white/[0.08] transition-all group overflow-hidden relative">
-      <div className="flex justify-between items-start mb-4">
+    <div className="bg-white/5 border border-white/10 rounded-xl p-4 hover:bg-white/[0.08] transition-all group overflow-hidden relative">
+      <div className="flex justify-between items-start mb-3">
         <div>
-          <h3 className="text-xl font-semibold text-white group-hover:text-blue-400 transition-colors uppercase tracking-tight">
+          <h3 className="text-lg font-semibold text-white group-hover:text-blue-400 transition-colors uppercase tracking-tight">
             {job.title}
           </h3>
           <p className="text-zinc-400 font-medium flex items-center gap-2 mt-1">
@@ -39,7 +39,7 @@ export default function JobCard({ job, onAction, pendingAction }: JobCardProps) 
         </span>
       </div>
 
-      <div className="flex flex-wrap gap-2 mb-4">
+      <div className="flex flex-wrap gap-2 mb-3">
         <span className="bg-blue-500/10 text-blue-400 text-xs px-2 py-1 rounded-md flex items-center gap-1 border border-blue-500/20">
           <MapPin className="w-3 h-3" /> {job.location}
         </span>
@@ -76,7 +76,7 @@ export default function JobCard({ job, onAction, pendingAction }: JobCardProps) 
       )}
 
       {job.description_summary && (
-        <p className="text-zinc-400 text-sm mb-6 leading-relaxed bg-black/20 p-3 rounded-lg border border-white/5 italic">
+        <p className="text-zinc-400 text-sm mb-4 leading-relaxed bg-black/20 p-3 rounded-lg border border-white/5 italic">
           &quot;{job.description_summary}&quot;
         </p>
       )}
@@ -85,7 +85,7 @@ export default function JobCard({ job, onAction, pendingAction }: JobCardProps) 
         href={job.url} 
         target="_blank" 
         rel="noopener noreferrer"
-        className="inline-flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors bg-blue-400/10 px-4 py-2 rounded-lg border border-blue-400/20 w-full justify-center font-medium"
+        className="inline-flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors bg-blue-400/10 px-4 py-1.5 rounded-lg border border-blue-400/20 w-full justify-center font-medium"
       >
         View Posting <ExternalLink className="w-3 h-3" />
       </a>
