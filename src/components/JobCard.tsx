@@ -1,4 +1,4 @@
-import { ExternalLink, CheckCircle, XCircle, Building2, MapPin, Users, Briefcase, Factory } from 'lucide-react';
+import { ExternalLink, CheckCircle, Building2, MapPin, Users, Briefcase, Factory } from 'lucide-react';
 import { Job } from '@/lib/types';
 
 interface JobCardProps {
@@ -50,7 +50,7 @@ export default function JobCard({ job, onSeen }: JobCardProps) {
 
       {job.description_summary && (
         <p className="text-zinc-400 text-sm mb-6 leading-relaxed bg-black/20 p-3 rounded-lg border border-white/5 italic">
-          "{job.description_summary}"
+          &quot;{job.description_summary}&quot;
         </p>
       )}
 

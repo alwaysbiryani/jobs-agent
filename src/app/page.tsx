@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Search, RefreshCcw, Filter, Loader2, Sparkles, CheckCheck } from "lucide-react";
+import { RefreshCcw, Filter, Loader2, Sparkles, CheckCheck } from "lucide-react";
 import { Job } from "@/lib/types";
 import { useUserId } from "@/hooks/useUserId";
 import JobCard from "@/components/JobCard";
@@ -34,7 +34,9 @@ export default function Home() {
   }, [userId]);
 
   useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises, react-hooks/set-state-in-effect
     fetchJobs();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchJobs]);
 
   const handleSync = useCallback(async () => {
@@ -49,7 +51,7 @@ export default function Home() {
     }
   }, [fetchJobs]);
 
-  const handleDismiss = async (jobId: string) => {
+  const handleDismiss = useCallback(async (jobId: string) => {
     // Optimistic update
     setJobs((prev) => prev.filter((j) => j.id !== jobId));
     try {
@@ -62,7 +64,7 @@ export default function Home() {
       console.error(err);
       fetchJobs(); // Revert on error
     }
-  };
+  }, [userId, fetchJobs]);
 
   const filteredJobs = jobs.filter(job => {
     if (filter.industry !== "all" && job.industry !== filter.industry) return false;

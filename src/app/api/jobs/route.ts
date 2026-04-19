@@ -10,8 +10,8 @@ export async function GET(request: Request) {
   try {
     const jobs = await getJobs(userId);
     return NextResponse.json(jobs);
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }
 
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       await dismissJob(userId, jobId);
     }
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }
