@@ -50,10 +50,6 @@ export async function GET(request: Request) {
       }
       console.log(`Processing: ${listing.title} at ${listing.snippet}`);
       
-      // Basic extraction from snippet/title
-      const companyMatch = listing.title.match(/at\s+(.*?)(?=\s+|$)/) || listing.title.match(/(.*?)\s+Job/) || [null, listing.title.split(' - ')[1] || 'Unknown'];
-      const company = companyMatch[1] || 'Unknown';
-
       // Enrich with Gemini
       const metadata = await enrichJob(listing.link);
 

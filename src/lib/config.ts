@@ -12,10 +12,10 @@ export const AGENT_CONFIG = {
   locations: ['Remote', 'San Francisco', 'London', 'New York'],
   
   // Company Inclusion: If not empty, only these companies will be considered
-  includedCompanies: [], 
+  includedCompanies: [] as string[], 
   
   // Company Exclusion: Companies to skip if found
-  excludedCompanies: ['Amazon', 'Facebook', 'Meta', 'Google'],
+  excludedCompanies: ['Amazon', 'Facebook', 'Meta', 'Google'] as string[],
   
   // Search recency (Google search 'after:' operator)
   searchAfterDate: '2025-04-01',
