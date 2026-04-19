@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { RefreshCcw, Filter, Loader2, Sparkles, CheckCheck } from "lucide-react";
 import { Job } from "@/lib/types";
 import { useUserId } from "@/hooks/useUserId";
@@ -14,7 +14,8 @@ export default function Home() {
   const [filter, setFilter] = useState({
     industry: "all",
     stage: "all",
-    size: "all"
+    location: "all",
+    company: "all"
   });
 
   const fetchJobs = useCallback(async () => {
@@ -42,7 +43,7 @@ export default function Home() {
   const handleSync = useCallback(async () => {
     setSyncing(true);
     try {
-      await fetch("/api/cron/sync"); // Simple test sync
+      await fetch("/api/cron/sync");
       await fetchJobs();
     } catch (err) {
       console.error(err);
@@ -52,7 +53,6 @@ export default function Home() {
   }, [fetchJobs]);
 
   const handleDismiss = useCallback(async (jobId: string) => {
-    // Optimistic update
     setJobs((prev) => prev.filter((j) => j.id !== jobId));
     try {
       await fetch("/api/jobs", {
@@ -62,19 +62,24 @@ export default function Home() {
       });
     } catch (err) {
       console.error(err);
-      fetchJobs(); // Revert on error
+      fetchJobs();
     }
   }, [userId, fetchJobs]);
 
-  const filteredJobs = jobs.filter(job => {
-    if (filter.industry !== "all" && job.industry !== filter.industry) return false;
-    if (filter.stage !== "all" && job.company_stage !== filter.stage) return false;
-    if (filter.size !== "all" && job.company_size !== filter.size) return false;
-    return true;
-  });
+  const filteredJobs = useMemo(() => {
+    return jobs.filter(job => {
+      if (filter.industry !== "all" && job.industry !== filter.industry) return false;
+      if (filter.stage !== "all" && job.company_stage !== filter.stage) return false;
+      if (filter.location !== "all" && !job.location.toLowerCase().includes(filter.location.toLowerCase())) return false;
+      if (filter.company !== "all" && job.company !== filter.company) return false;
+      return true;
+    });
+  }, [jobs, filter]);
 
-  const industries = Array.from(new Set(jobs.map(j => j.industry).filter(Boolean)));
-  const stages = Array.from(new Set(jobs.map(j => j.company_stage).filter(Boolean)));
+  const industries = useMemo(() => Array.from(new Set(jobs.map(j => j.industry).filter(Boolean))).sort(), [jobs]);
+  const stages = useMemo(() => Array.from(new Set(jobs.map(j => j.company_stage).filter(Boolean))).sort(), [jobs]);
+  const locations = useMemo(() => Array.from(new Set(jobs.map(j => j.location).filter(Boolean))).sort(), [jobs]);
+  const companies = useMemo(() => Array.from(new Set(jobs.map(j => j.company).filter(Boolean))).sort(), [jobs]);
 
   return (
     <main className="max-w-7xl mx-auto px-6 py-12 relative">
@@ -102,27 +107,49 @@ export default function Home() {
           <Filter className="w-4 h-4" /> FILTERS
         </div>
         
+        {/* Industry Filter */}
         <select 
-          className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500/50"
+          className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500/50 min-w-[140px]"
           value={filter.industry}
           onChange={(e) => setFilter(f => ({...f, industry: e.target.value}))}
         >
-          <option value="all">All Industries</option>
+          <option value="all">Industries ({industries.length})</option>
           {industries.map(ind => <option key={ind} value={ind!}>{ind}</option>)}
         </select>
 
+        {/* Stage Filter */}
         <select 
-          className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500/50"
+          className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500/50 min-w-[140px]"
           value={filter.stage}
           onChange={(e) => setFilter(f => ({...f, stage: e.target.value}))}
         >
-          <option value="all">Any Stage</option>
+          <option value="all">Company Stages ({stages.length})</option>
           {stages.map(stage => <option key={stage} value={stage!}>{stage}</option>)}
         </select>
 
+        {/* Location Filter */}
+        <select 
+          className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500/50 min-w-[140px]"
+          value={filter.location}
+          onChange={(e) => setFilter(f => ({...f, location: e.target.value}))}
+        >
+          <option value="all">Locations ({locations.length})</option>
+          {locations.map(loc => <option key={loc} value={loc!}>{loc}</option>)}
+        </select>
+
+        {/* Company Filter */}
+        <select 
+          className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500/50 min-w-[140px]"
+          value={filter.company}
+          onChange={(e) => setFilter(f => ({...f, company: e.target.value}))}
+        >
+          <option value="all">Companies ({companies.length})</option>
+          {companies.map(comp => <option key={comp} value={comp!}>{comp}</option>)}
+        </select>
+
         <div className="flex-1" />
-        <div className="text-zinc-500 text-xs font-mono uppercase tracking-widest">
-          {filteredJobs.length} results found
+        <div className="text-zinc-500 text-xs font-mono uppercase tracking-widest bg-white/5 px-3 py-1 rounded-full border border-white/5">
+          {filteredJobs.length} active leads
         </div>
       </div>
 
@@ -151,8 +178,8 @@ export default function Home() {
       {/* User Status Bar */}
       <div className="mt-16 pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 text-zinc-600 text-[10px] font-mono tracking-widest uppercase">
         <span>Identity: {userId?.slice(0, 8)}...</span>
-        <span>Auto-Sync Frequency: 6h</span>
-        <span>Agent v1.0.0 Stable</span>
+        <span>Auto-Sync Frequency: 24h (Hobby Tier)</span>
+        <span>Agent v1.0.1 Stable</span>
       </div>
     </main>
   );
