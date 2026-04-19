@@ -9,6 +9,16 @@ export const maxDuration = 300; // 5 minutes for enrichment
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
+    const checkOnly = searchParams.get('check') === 'true';
+    
+    // Check keys
+    if (!process.env.SERPER_API_KEY || !process.env.GEMINI_API_KEY) {
+      const error = `Missing API keys: ${!process.env.SERPER_API_KEY ? 'SERPER ' : ''}${!process.env.GEMINI_API_KEY ? 'GEMINI' : ''}`;
+      if (checkOnly) return NextResponse.json({ success: false, error });
+      throw new Error(error);
+    }
+    if (checkOnly) return NextResponse.json({ success: true });
+
     const role = searchParams.get('role') || AGENT_CONFIG.roles[0];
     const location = searchParams.get('location') || AGENT_CONFIG.locations[0];
     

@@ -24,6 +24,8 @@ export default function Home() {
     company: "all"
   });
 
+  const [keysMissing, setKeysMissing] = useState({ serper: false, gemini: false });
+
   const fetchJobs = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
@@ -33,6 +35,14 @@ export default function Home() {
       if (Array.isArray(data)) {
         setJobs(data);
       }
+      
+      // Check for missing keys in the response or a separate check
+      const checkRes = await fetch('/api/cron/sync?check=true');
+      const checkData = await checkRes.json();
+      setKeysMissing({
+        serper: checkData.error?.includes('SERPER'),
+        gemini: checkData.error?.includes('GEMINI')
+      });
     } catch (err) {
       console.error(err);
     } finally {
@@ -199,6 +209,21 @@ export default function Home() {
           </div>
           <h2 className="text-2xl font-bold text-white mb-2 uppercase tracking-tight">No Leads Found</h2>
           <p className="text-zinc-500 max-w-md">Try adjusting your search role or location above and click "Sync Agent" to start a fresh scan.</p>
+        </div>
+      )}
+
+      {/* API Key Warnings */}
+      {(keysMissing.serper || keysMissing.gemini) && (
+        <div className="mt-8 bg-red-500/10 border border-red-500/20 rounded-2xl p-4 flex items-center gap-4 text-red-400">
+          <div className="bg-red-500/20 p-2 rounded-lg">
+            <Sparkles className="w-5 h-5" />
+          </div>
+          <div className="text-sm">
+            <p className="font-bold">Setup Required</p>
+            <p className="text-red-400/80">
+              Please add your {keysMissing.serper && "SERPER_API_KEY"} {keysMissing.serper && keysMissing.gemini && "and"} {keysMissing.gemini && "GEMINI_API_KEY"} to .env.local and restart the server.
+            </p>
+          </div>
         </div>
       )}
 
