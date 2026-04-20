@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getJobs, saveJobInteraction } from '@/lib/db';
+import { JobView } from '@/lib/types';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get('userId');
-  const view = (searchParams.get('view') as 'all' | 'saved') || 'all';
+  const view = (searchParams.get('view') as JobView) || 'all';
   
   if (!userId) return NextResponse.json({ error: 'User ID required' }, { status: 400 });
   
@@ -12,6 +13,7 @@ export async function GET(request: Request) {
     const jobs = await getJobs(userId, view);
     return NextResponse.json(jobs);
   } catch (error: unknown) {
+    console.error(`Error in GET /api/jobs?view=${view}:`, error);
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }

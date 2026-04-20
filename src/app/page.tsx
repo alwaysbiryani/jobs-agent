@@ -38,6 +38,8 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [activeTab, setActiveTab] = useState<JobView>('new');
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [healthStatus, setHealthStatus] = useState<{ database: string, env: any } | null>(null);
   
   const [searchRole, setSearchRole] = useState("Software Engineer");
   const [searchLocation, setSearchLocation] = useState("Remote");
@@ -61,11 +63,15 @@ export default function Home() {
         setJobs(data);
       }
       
+      const healthRes = await fetch('/api/health');
+      const healthData = await healthRes.json();
+      setHealthStatus(healthData);
+      
       const checkRes = await fetch('/api/cron/sync?check=true');
       const checkData = await checkRes.json();
       setKeysMissing({
-        serper: checkData.error?.includes('SERPER'),
-        gemini: checkData.error?.includes('GEMINI')
+        serper: !healthData.env.SERPER_API_KEY,
+        gemini: !healthData.env.GEMINI_API_KEY
       });
     } catch (err) {
       console.error(err);
@@ -80,11 +86,19 @@ export default function Home() {
 
   const handleSync = useCallback(async () => {
     setSyncing(true);
+    setSyncError(null);
     try {
-      await fetch(`/api/cron/sync?role=${encodeURIComponent(searchRole)}&location=${encodeURIComponent(searchLocation)}`);
-      await fetchJobs();
+      const res = await fetch(`/api/cron/sync?role=${encodeURIComponent(searchRole)}&location=${encodeURIComponent(searchLocation)}`);
+      const data = await res.json();
+      
+      if (!res.ok || data.success === false) {
+        setSyncError(data.error || 'Sync failed. Check your API keys and database connection.');
+      } else {
+        await fetchJobs();
+      }
     } catch (err) {
       console.error(err);
+      setSyncError('Network error during sync.');
     } finally {
       setSyncing(false);
     }
@@ -217,6 +231,13 @@ export default function Home() {
                   <span className="text-xs uppercase tracking-widest">Execute Scan</span>
                 </button>
               </div>
+
+              {syncError && (
+                <div className="mt-4 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+                  <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  <p className="text-xs font-bold text-red-500 uppercase tracking-widest">{syncError}</p>
+                </div>
+              )}
             </div>
           </section>
         )}

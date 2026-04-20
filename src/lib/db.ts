@@ -18,6 +18,17 @@ function getSql() {
   return _sql;
 }
 
+export async function checkConnection() {
+  const sql = getSql();
+  try {
+    await sql`SELECT 1`;
+    return true;
+  } catch (error) {
+    console.error('Database connection check failed:', error);
+    return false;
+  }
+}
+
 export async function createTables() {
   const sql = getSql();
   try {

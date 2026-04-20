@@ -33,14 +33,25 @@ export async function GET(request: Request) {
 
     const results = [];
     for (const site of sites) {
-      const query = `${site} "${role}" "${location}" after:${AGENT_CONFIG.searchAfterDate}`;
+      // Relaxed query: removed quotes around role and location to increase match surface
+      const query = `${site} ${role} ${location} after:${AGENT_CONFIG.searchAfterDate}`;
+      console.log(`Searching: ${query}`);
       const listings = await searchJobs(query);
+      console.log(`Found ${listings.length} results for ${site}`);
       results.push(...listings);
     }
 
     // Limit and filter
     const uniqueListings = Array.from(new Map(results.map(item => [item.link, item])).values());
+    console.log(`Unique listings found: ${uniqueListings.length}`);
     
+    if (uniqueListings.length === 0) {
+      return NextResponse.json({ 
+        success: false, 
+        error: `No jobs found for "${role}" in "${location}". Try broadening your search terms or checking your API limits.` 
+      }, { status: 404 });
+    }
+
     const syncedJobs = [];
     for (const listing of uniqueListings.slice(0, 15)) {
       // Basic extraction from snippet/title
@@ -58,10 +69,15 @@ export async function GET(request: Request) {
         console.log(`Skipping non-included company: ${company}`);
         continue;
       }
-      console.log(`Processing: ${listing.title} at ${listing.snippet}`);
+      
+      console.log(`Enriching: ${listing.title} from ${listing.link}`);
       
       // Enrich with Gemini
       const metadata = await enrichJob(listing.link);
+      
+      if (!metadata) {
+        console.warn(`Failed to enrich job at ${listing.link}`);
+      }
 
       const jobData = {
         title: listing.title.split(' - ')[0],
@@ -72,13 +88,16 @@ export async function GET(request: Request) {
         industry: metadata?.industry,
         company_size: metadata?.company_size,
         company_stage: metadata?.company_stage,
-        description_summary: metadata?.summary
+        description_summary: metadata?.summary,
+        search_role: role,
+        search_location: location
       };
 
       await saveJob(jobData);
       syncedJobs.push(jobData);
     }
 
+    console.log(`Successfully synced ${syncedJobs.length} jobs.`);
     return NextResponse.json({ success: true, count: syncedJobs.length, jobs: syncedJobs });
   } catch (error: unknown) {
     console.error('Sync error:', error);
