@@ -134,14 +134,20 @@ export async function saveJobInteraction(userId: string, jobId: string, status: 
   return setJobStatus(userId, jobId, status);
 }
 
-export async function getJobs(userId: string, view: JobView = 'new') {
+export async function getJobs(userId: string, view: JobView = 'new', role?: string, location?: string) {
   const sql = getSql();
+  
+  const roleFilter = role && role !== 'all' ? `%${role}%` : null;
+  const locationFilter = location && location !== 'all' ? `%${location}%` : null;
+
   const queryByView: Record<JobView, string> = {
     new: `
       SELECT j.*, i.status AS interaction_status
       FROM jobs j
       LEFT JOIN job_interactions i ON j.id = i.job_id AND i.user_id = $1
-      WHERE i.status IS NULL OR i.status = 'seen'
+      WHERE (i.status IS NULL OR i.status = 'seen')
+        ${roleFilter ? 'AND (j.title ILIKE $2 OR j.search_role ILIKE $2)' : 'AND ($2 IS NULL OR true)'}
+        ${locationFilter ? 'AND (j.location ILIKE $3 OR j.search_location ILIKE $3)' : 'AND ($3 IS NULL OR true)'}
       ORDER BY j.discovered_at DESC LIMIT 100
     `,
     saved: `
@@ -149,6 +155,8 @@ export async function getJobs(userId: string, view: JobView = 'new') {
       FROM jobs j
       JOIN job_interactions i ON j.id = i.job_id
       WHERE i.user_id = $1 AND i.status = 'saved'
+        ${roleFilter ? 'AND (j.title ILIKE $2 OR j.search_role ILIKE $2)' : 'AND ($2 IS NULL OR true)'}
+        ${locationFilter ? 'AND (j.location ILIKE $3 OR j.search_location ILIKE $3)' : 'AND ($3 IS NULL OR true)'}
       ORDER BY i.created_at DESC LIMIT 100
     `,
     applied: `
@@ -176,11 +184,14 @@ export async function getJobs(userId: string, view: JobView = 'new') {
       SELECT j.*, i.status AS interaction_status
       FROM jobs j
       LEFT JOIN job_interactions i ON j.id = i.job_id AND i.user_id = $1
+      WHERE 1=1
+        ${roleFilter ? 'AND (j.title ILIKE $2 OR j.search_role ILIKE $2)' : 'AND ($2 IS NULL OR true)'}
+        ${locationFilter ? 'AND (j.location ILIKE $3 OR j.search_location ILIKE $3)' : 'AND ($3 IS NULL OR true)'}
       ORDER BY j.discovered_at DESC LIMIT 200
     `,
   };
 
-  return await sql(queryByView[view], [userId]);
+  return await sql(queryByView[view], [userId, roleFilter, locationFilter]);
 }
 
 export async function getUserPreferences(userId: string): Promise<UserPreferences | null> {

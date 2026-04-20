@@ -22,16 +22,13 @@ export async function GET(request: Request) {
     const roleParam = searchParams.get('role') || AGENT_CONFIG.roles[0];
     const locationParam = searchParams.get('location') || AGENT_CONFIG.locations[0];
     
-    // Broaden role using synonyms
-    const role = AGENT_CONFIG.synonyms[roleParam] || `"${roleParam}"`;
+    // Broaden role using synonyms, avoiding double quotes if already present
+    const role = AGENT_CONFIG.synonyms[roleParam] || 
+                 (roleParam.startsWith('"') ? roleParam : `"${roleParam}"`);
     
-    // Expand location (e.g., Delhi -> NCR)
-    let location = locationParam;
-    if (locationParam.toLowerCase() === 'delhi') {
-      location = '(Delhi OR Noida OR Gurgaon OR NCR)';
-    } else {
-      location = `"${locationParam}"`;
-    }
+    // Expand location using config map, defaulting to quoted search
+    const location = (AGENT_CONFIG as any).locationSynonyms[locationParam] || 
+                    (locationParam.startsWith('"') ? locationParam : `"${locationParam}"`);
 
     await createTables();
 
@@ -55,7 +52,7 @@ export async function GET(request: Request) {
     if (uniqueListings.length === 0) {
       return NextResponse.json({ 
         success: false, 
-        error: `No jobs found for "${role}" in "${location}". Try broadening your search terms or checking your API limits.` 
+        error: `No jobs found for ${role} in ${location}. Try broadening your search terms or checking your API limits.` 
       }, { status: 404 });
     }
 

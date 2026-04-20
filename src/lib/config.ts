@@ -11,13 +11,23 @@ export const AGENT_CONFIG = {
   // Role Synonyms: Automatically expands short searches
   synonyms: {
     'Product': '("Product Manager" OR "Product Owner" OR "Product Lead")',
+    'Senior Product Manager': '("Senior Product Manager" OR "Lead Product Manager" OR "Principal Product Manager" OR "Director of Product")',
+    'Senior PM': '("Senior Product Manager" OR "Lead Product Manager" OR "Principal Product Manager" OR "Director of Product")',
     'Eng': '("Software Engineer" OR "Developer" OR "Fullstack")',
     'Design': '("Product Designer" OR "UX Designer" OR "UI Designer")'
   } as Record<string, string>,
 
   // Locations to target
-  locations: ['Remote', 'San Francisco', 'London', 'New York', 'Delhi', 'Noida', 'Gurgaon'],
+  locations: ['Remote', 'San Francisco', 'London', 'New York', 'Dubai', 'Delhi', 'Noida', 'Gurgaon'],
   
+  // Location Synonyms: Expands specific cities to regions/country names
+  locationSynonyms: {
+    'Dubai': '(Dubai OR UAE OR "United Arab Emirates")',
+    'Delhi': '(Delhi OR Noida OR Gurgaon OR NCR)',
+    'SF': '("San Francisco" OR "Bay Area")',
+    'London': '(London OR "United Kingdom" OR UK)'
+  } as Record<string, string>,
+
   // Target Job Boards (Direct ATS systems)
   searchSites: [
     'site:boards.greenhouse.io',
@@ -26,7 +36,10 @@ export const AGENT_CONFIG = {
     'site:jobs.ashbyhq.com',
     'site:wellfound.com/jobs',
     'site:applytojob.com',
-    'site:wd5.myworkdayjobs.com'
+    'site:wd5.myworkdayjobs.com',
+    'site:bayt.com',
+    'site:gulftalent.com',
+    'site:drjobs.ae'
   ],
 
   // Company Inclusion: If not empty, only these companies will be considered

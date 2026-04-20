@@ -4,7 +4,7 @@ export interface Job {
   company: string;
   location: string;
   url: string;
-  source: 'linkedin' | 'greenhouse' | 'lever' | 'other';
+  source: 'linkedin' | 'greenhouse' | 'lever' | 'ashby' | 'wellfound' | 'workday' | 'bayt' | 'gulftalent' | 'other';
   posted_at: string;
   discovered_at: string;
   

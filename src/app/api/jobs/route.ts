@@ -3,14 +3,15 @@ import { getJobs, saveJobInteraction } from '@/lib/db';
 import { JobView } from '@/lib/types';
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
   const userId = searchParams.get('userId');
   const view = (searchParams.get('view') as JobView) || 'all';
+  const role = searchParams.get('role') || undefined;
+  const location = searchParams.get('location') || undefined;
   
   if (!userId) return NextResponse.json({ error: 'User ID required' }, { status: 400 });
   
   try {
-    const jobs = await getJobs(userId, view);
+    const jobs = await getJobs(userId, view, role, location);
     return NextResponse.json(jobs);
   } catch (error: unknown) {
     console.error(`Error in GET /api/jobs?view=${view}:`, error);

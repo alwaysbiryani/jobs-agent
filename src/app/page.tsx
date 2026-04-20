@@ -44,6 +44,7 @@ export default function Home() {
   
   const [searchRole, setSearchRole] = useState("Software Engineer");
   const [searchLocation, setSearchLocation] = useState("Remote");
+  const [activeSearch, setActiveSearch] = useState<{role: string, location: string} | null>(null);
 
   const [filter, setFilter] = useState({
     industry: "all",
@@ -54,11 +55,17 @@ export default function Home() {
 
   const [keysMissing, setKeysMissing] = useState({ serper: false, gemini: false });
 
-  const fetchJobs = useCallback(async () => {
+  const fetchJobs = useCallback(async (role?: string, location?: string) => {
     if (!userId) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/jobs?userId=${userId}&view=${activeTab}`);
+      const params = new URLSearchParams({
+        userId,
+        view: activeTab,
+        ...(role && { role }),
+        ...(location && { location })
+      });
+      const res = await fetch(`/api/jobs?${params.toString()}`);
       const data = await res.json();
       if (Array.isArray(data)) {
         setJobs(data);
@@ -82,20 +89,28 @@ export default function Home() {
   }, [userId, activeTab]);
 
   useEffect(() => {
-    fetchJobs();
-  }, [fetchJobs]);
+    if (activeSearch) {
+      fetchJobs(activeSearch.role, activeSearch.location);
+    } else {
+      fetchJobs();
+    }
+  }, [fetchJobs, activeSearch]);
 
   const handleSync = useCallback(async () => {
     setSyncing(true);
     setSyncError(null);
+    // Enter search mode
+    setActiveSearch({ role: searchRole, location: searchLocation });
+    
     try {
       const res = await fetch(`/api/cron/sync?role=${encodeURIComponent(searchRole)}&location=${encodeURIComponent(searchLocation)}`);
       const data = await res.json();
       
       if (!res.ok || data.success === false) {
         setSyncError(data.error || 'Sync failed. Check your API keys and database connection.');
+        setJobs([]); // Clear results on specific failure
       } else {
-        await fetchJobs();
+        await fetchJobs(searchRole, searchLocation);
       }
     } catch (err) {
       console.error(err);
@@ -193,12 +208,24 @@ export default function Home() {
           <section className="mb-16">
             <div className="flex flex-col gap-6">
               <div>
-                <h1 className="text-5xl md:text-7xl font-display font-black tracking-tight text-white mb-4 leading-none">
-                  INTELLIGENT <br />
-                  <span className="text-zinc-600">SCOUTING</span>
+                <h1 className="text-5xl md:text-7xl font-display font-black tracking-tight text-white mb-4 leading-none uppercase">
+                  {activeSearch ? (
+                    <>
+                      Search <br />
+                      <span className="text-zinc-600">Results</span>
+                    </>
+                  ) : (
+                    <>
+                      Intelligent <br />
+                      <span className="text-zinc-600">Discovery</span>
+                    </>
+                  )}
                 </h1>
                 <p className="text-zinc-500 font-medium max-w-lg text-lg">
-                  Scanning verified boards for {searchRole} roles in {searchLocation}.
+                  {activeSearch 
+                    ? `Showing strictly verified results for ${activeSearch.role} in ${activeSearch.location}.`
+                    : `Welcome back. Exploring verified boards for top trending roles globally.`
+                  }
                 </p>
               </div>
 
@@ -240,6 +267,19 @@ export default function Home() {
                     Coverage: {AGENT_CONFIG.searchSites.length} Verified Boards
                   </span>
                 </div>
+                
+                {activeSearch && (
+                  <button 
+                    onClick={() => {
+                      setActiveSearch(null);
+                      setSyncError(null);
+                    }}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-white/10 rounded-full border border-white/20 hover:bg-white/20 transition-all active:scale-95"
+                  >
+                    <ListFilter className="w-3 h-3 text-white" />
+                    <span className="text-[10px] font-mono font-bold text-white uppercase tracking-widest">Back to Discovery</span>
+                  </button>
+                )}
                 
                 {healthStatus?.database === 'connected' && (
                   <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 rounded-full border border-emerald-500/10">
@@ -289,7 +329,7 @@ export default function Home() {
           </div>
 
           <div className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-zinc-700 bg-white/5 px-4 py-2 rounded-full border border-white/5">
-            Buffer: {filteredJobs.length} Entries
+            {activeSearch ? 'Query Match' : 'Trending'}: {filteredJobs.length} Entries
           </div>
         </div>
 
