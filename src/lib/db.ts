@@ -77,7 +77,13 @@ export async function createTables() {
       );
     `);
     
-    console.log('Database tables verified/created successfully.');
+
+    await sql(`CREATE INDEX IF NOT EXISTS idx_jobs_discovered_at ON jobs(discovered_at DESC);`);
+    await sql(`CREATE INDEX IF NOT EXISTS idx_jobs_search_role ON jobs(search_role);`);
+    await sql(`CREATE INDEX IF NOT EXISTS idx_jobs_search_location ON jobs(search_location);`);
+    await sql(`CREATE INDEX IF NOT EXISTS idx_interactions_user_status_created ON job_interactions(user_id, status, created_at DESC);`);
+
+        console.log('Database tables verified/created successfully.');
   } catch (error) {
     console.error('Error creating database tables:', error);
   }
