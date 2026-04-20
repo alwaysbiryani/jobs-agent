@@ -244,6 +244,8 @@ export default function Home() {
 
       if (!res.ok || data.success === false) {
         setSyncError(data.error || "Sync failed.");
+        setActiveSearch({ role: trimmedRole, location: trimmedLocation });
+        await fetchJobs(trimmedRole, trimmedLocation, activeTab);
         return;
       }
 
