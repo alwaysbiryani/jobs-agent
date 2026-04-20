@@ -179,6 +179,7 @@ export default function Home() {
   const [syncing, setSyncing] = useState(false);
   const [activeTab, setActiveTab] = useState<JobView>("new");
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [searchRole, setSearchRole] = useState("Software Engineer");
   const [searchLocation, setSearchLocation] = useState("Remote");
   const [activeSearch, setActiveSearch] = useState<{ role: string; location: string } | null>(null);
@@ -219,8 +220,16 @@ export default function Home() {
   }, [userId, fetchJobs]);
 
   const handleSync = useCallback(async () => {
+    const trimmedRole = searchRole.trim();
+    const trimmedLocation = searchLocation.trim();
+    if (!trimmedRole || !trimmedLocation) {
+      setSyncError("Please enter both role and location before scanning.");
+      return;
+    }
+
     setSyncing(true);
     setSyncError(null);
+    setSyncMessage(null);
 
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -229,7 +238,7 @@ export default function Home() {
       const res = await fetch("/api/cron/sync", {
         method: "POST",
         headers,
-        body: JSON.stringify({ role: searchRole, location: searchLocation, customSites: customBoards }),
+        body: JSON.stringify({ role: trimmedRole, location: trimmedLocation, customSites: customBoards }),
       });
       const data = await res.json();
 
@@ -238,8 +247,9 @@ export default function Home() {
         return;
       }
 
-      setActiveSearch({ role: searchRole, location: searchLocation });
-      await fetchJobs(searchRole, searchLocation, activeTab);
+      setSyncMessage(`Synced ${data.count ?? 0} relevant jobs for ${trimmedRole} in ${trimmedLocation}.`);
+      setActiveSearch({ role: trimmedRole, location: trimmedLocation });
+      await fetchJobs(trimmedRole, trimmedLocation, activeTab);
     } catch (error) {
       console.error(error);
       setSyncError("Network error during sync.");
@@ -329,6 +339,7 @@ export default function Home() {
           </div>
 
           {syncError && <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl"><p className="text-xs font-bold text-red-500 uppercase tracking-widest">{syncError}</p></div>}
+          {syncMessage && <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl"><p className="text-xs font-bold text-emerald-400 uppercase tracking-widest">{syncMessage}</p></div>}
         </section>
 
         <div className="flex flex-wrap items-center gap-3 mb-8">
@@ -346,7 +357,7 @@ export default function Home() {
           <div className="glass border-dashed rounded-3xl py-24 flex flex-col items-center justify-center text-center px-6">
             <CheckCheck className="w-8 h-8 text-zinc-800 mb-4" />
             <h2 className="text-xl font-bold text-white mb-2 font-display uppercase tracking-tight">No results yet</h2>
-            <p className="text-zinc-600 max-w-sm text-sm font-medium">Run a scan with broader role/location terms to seed results.</p>
+            <p className="text-zinc-600 max-w-sm text-sm font-medium">Try broader role/location terms or add additional boards, then run another scan.</p>
           </div>
         )}
       </div>
