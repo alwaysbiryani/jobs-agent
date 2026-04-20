@@ -279,6 +279,7 @@ export default function Home() {
   const [syncing, setSyncing] = useState(false);
   const [activeTab, setActiveTab] = useState<JobView>("new");
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [healthStatus, setHealthStatus] = useState<{ database: string; env: any } | null>(null);
 
   const [searchRole, setSearchRole] = useState("Software Engineer");
@@ -348,14 +349,22 @@ export default function Home() {
   }, [fetchJobs, activeSearch]);
 
   const handleSync = useCallback(async () => {
+    const trimmedRole = searchRole.trim();
+    const trimmedLocation = searchLocation.trim();
+    if (!trimmedRole || !trimmedLocation) {
+      setSyncError("Please enter both role and location before scanning.");
+      return;
+    }
+
     setSyncing(true);
     setSyncError(null);
-    setActiveSearch({ role: searchRole, location: searchLocation });
+    setSyncMessage(null);
+    setActiveSearch({ role: trimmedRole, location: trimmedLocation });
 
     try {
       const params = new URLSearchParams({
-        role: searchRole,
-        location: searchLocation,
+        role: trimmedRole,
+        location: trimmedLocation,
         ...(customBoards.length > 0 && { customSites: customBoards.join(",") }),
       });
 
@@ -370,7 +379,8 @@ export default function Home() {
         setSyncError(data.error || "Sync failed. Check your API keys and database connection.");
         setJobs([]);
       } else {
-        await fetchJobs(searchRole, searchLocation);
+        setSyncMessage(`Synced ${data.count ?? 0} relevant jobs for ${trimmedRole} in ${trimmedLocation}.`);
+        await fetchJobs(trimmedRole, trimmedLocation);
       }
     } catch (err) {
       console.error(err);
@@ -539,7 +549,7 @@ export default function Home() {
 
                 {activeSearch && (
                   <button
-                    onClick={() => { setActiveSearch(null); setSyncError(null); }}
+                    onClick={() => { setActiveSearch(null); setSyncError(null); setSyncMessage(null); }}
                     className="flex items-center gap-2 px-3 py-1.5 bg-white/10 rounded-full border border-white/20 hover:bg-white/20 transition-all active:scale-95"
                   >
                     <ListFilter className="w-3 h-3 text-white" />
@@ -577,6 +587,13 @@ export default function Home() {
                       </button>
                     )}
                   </div>
+                </div>
+              )}
+
+              {syncMessage && !syncError && (
+                <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 mt-0.5 shrink-0" />
+                  <p className="text-xs font-bold text-emerald-500 uppercase tracking-widest">{syncMessage}</p>
                 </div>
               )}
             </div>
@@ -634,7 +651,11 @@ export default function Home() {
               <CheckCheck className="w-8 h-8 text-zinc-800" />
             </div>
             <h2 className="text-xl font-bold text-white mb-2 font-display uppercase tracking-tight">Queue Empty</h2>
-            <p className="text-zinc-600 max-w-sm text-sm font-medium">No active entries found for this view.</p>
+            <p className="text-zinc-600 max-w-sm text-sm font-medium">
+              {activeSearch
+                ? "No matching entries found. Try broader keywords, another location, or add a board source."
+                : "No active entries found for this view."}
+            </p>
           </div>
         )}
 
