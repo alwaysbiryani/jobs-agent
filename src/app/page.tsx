@@ -376,7 +376,6 @@ export default function Home() {
 
       if (!res.ok || data.success === false) {
         setSyncError(data.error || "Sync failed. Check your API keys and database connection.");
-        setJobs([]);
       } else {
         await fetchJobs(searchRole, searchLocation);
       }

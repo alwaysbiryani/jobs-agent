@@ -16,6 +16,19 @@ type RankedListing = SearchListing & {
   relevanceScore: number;
 };
 
+function normalizeListingLink(link: string) {
+  try {
+    const url = new URL(link);
+    ['utm_source', 'utm_medium', 'utm_campaign', 'gh_jid', 'gh_src'].forEach(param => {
+      url.searchParams.delete(param);
+    });
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return link.trim();
+  }
+}
+
 function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -96,7 +109,7 @@ function extractCompany(title: string) {
 
   for (const pattern of patterns) {
     const match = title.match(pattern);
-    if (match?.[1]) return match[1].trim();
+    if (match?.[1]) return match[1].replace(/\s+/g, ' ').trim().slice(0, 80);
   }
 
   return 'Unknown';
@@ -161,7 +174,11 @@ export async function GET(request: Request) {
     }
 
     // Deduplicate
-    const uniqueListings = Array.from(new Map(results.filter(item => !!item.link).map(item => [item.link, item])).values());
+    const uniqueListings = Array.from(new Map(
+      results
+        .filter(item => !!item.link)
+        .map(item => [normalizeListingLink(item.link || ''), { ...item, link: normalizeListingLink(item.link || '') }])
+    ).values());
     const rankedListings = rankListings(uniqueListings, roleTokens, locationTokens);
 
     console.log(`Unique listings found: ${uniqueListings.length}`);
