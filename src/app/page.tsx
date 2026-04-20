@@ -283,7 +283,7 @@ export default function Home() {
 
   const [searchRole, setSearchRole] = useState("Software Engineer");
   const [searchLocation, setSearchLocation] = useState("Remote");
-  const [activeSearch, setActiveSearch] = useState<{ role: string; location: string } | null>(null);
+  const [activeSearch, setActiveSearch] = useState<{ role: string; location: string } | null>({ role: "Software Engineer", location: "Remote" });
 
   const [filter, setFilter] = useState({ industry: "all", stage: "all", location: "all", company: "all" });
   const [keysMissing, setKeysMissing] = useState({ serper: false, gemini: false });
@@ -449,9 +449,6 @@ export default function Home() {
             <div className="flex items-center p-1 bg-white/5 rounded-xl border border-white/10 overflow-x-auto no-scrollbar">
               <TabButton active={activeTab === "new"} onClick={() => setActiveTab("new")} icon={<ListFilter />} label="New" />
               <TabButton active={activeTab === "saved"} onClick={() => setActiveTab("saved")} icon={<Bookmark />} label="Saved" />
-              <TabButton active={activeTab === "applied"} onClick={() => setActiveTab("applied")} icon={<Send />} label="Applied" />
-              <TabButton active={activeTab === "interviewing"} onClick={() => setActiveTab("interviewing")} icon={<Users />} label="Interviewing" />
-              <TabButton active={activeTab === "all"} onClick={() => setActiveTab("all")} icon={<History />} label="All" />
             </div>
           </div>
 
