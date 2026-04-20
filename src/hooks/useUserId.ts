@@ -4,16 +4,15 @@ export function useUserId() {
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    const storedId = localStorage.getItem('jobs_agent_user_id');
-    if (storedId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setUserId(storedId);
-    } else {
-      const newId = crypto.randomUUID();
-      localStorage.setItem('jobs_agent_user_id', newId);
-       
-      setUserId(newId);
+    // Check localStorage once on mount
+    let id = localStorage.getItem('jobs_agent_user_id');
+    
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem('jobs_agent_user_id', id);
     }
+    
+    setUserId(id);
   }, []);
 
   return userId;

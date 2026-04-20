@@ -1,10 +1,25 @@
-import { neon } from '@neondatabase/serverless';
+import { neon, NeonQueryFunction } from '@neondatabase/serverless';
 import { Job, JobStatus, JobView, UserPreferences } from './types';
 
-// Initialize Neon SQL client
-const sql = neon(process.env.DATABASE_URL!);
+// Lazy-initialize Neon SQL client
+let _sql: NeonQueryFunction<false, false> | null = null;
+
+function getSql() {
+  if (!_sql) {
+    if (!process.env.DATABASE_URL) {
+      console.warn('DATABASE_URL is missing. Database operations will fail.');
+      // Return a proxy that throws on call to prevent top-level crashes but catch runtime errors
+      return (() => {
+        throw new Error('Database connection failed: DATABASE_URL is not defined.');
+      }) as unknown as NeonQueryFunction<false, false>;
+    }
+    _sql = neon(process.env.DATABASE_URL);
+  }
+  return _sql;
+}
 
 export async function createTables() {
+  const sql = getSql();
   try {
     // Jobs Table
     await sql(`
@@ -58,6 +73,7 @@ export async function createTables() {
 }
 
 export async function saveJob(job: Partial<Job>) {
+  const sql = getSql();
   const id = crypto.randomUUID();
   
   const result = await sql(`
@@ -87,6 +103,7 @@ export async function saveJob(job: Partial<Job>) {
 }
 
 export async function setJobStatus(userId: string, jobId: string, status: JobStatus) {
+  const sql = getSql();
   return await sql(`
     INSERT INTO job_interactions (user_id, job_id, status)
     VALUES ($1, $2, $3)
@@ -95,6 +112,7 @@ export async function setJobStatus(userId: string, jobId: string, status: JobSta
 }
 
 export async function clearJobStatus(userId: string, jobId: string) {
+  const sql = getSql();
   return await sql(`
     DELETE FROM job_interactions
     WHERE user_id = $1 AND job_id = $2
@@ -106,6 +124,7 @@ export async function saveJobInteraction(userId: string, jobId: string, status: 
 }
 
 export async function getJobs(userId: string, view: JobView = 'new') {
+  const sql = getSql();
   const queryByView: Record<JobView, string> = {
     new: `
       SELECT j.*, i.status AS interaction_status
@@ -154,6 +173,7 @@ export async function getJobs(userId: string, view: JobView = 'new') {
 }
 
 export async function getUserPreferences(userId: string): Promise<UserPreferences | null> {
+  const sql = getSql();
   const rows = await sql(`
     SELECT * FROM user_preferences WHERE user_id = $1 LIMIT 1
   `, [userId]);
@@ -163,6 +183,7 @@ export async function getUserPreferences(userId: string): Promise<UserPreference
 }
 
 export async function upsertUserPreferences(userId: string, preferences: Partial<UserPreferences>) {
+  const sql = getSql();
   return await sql(`
     INSERT INTO user_preferences (
       user_id, roles, locations, work_modes, seniority, must_have_keywords, excluded_keywords, updated_at
