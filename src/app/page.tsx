@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, cloneElement } from "react";
-import { RefreshCcw, Loader2, Sparkles, CheckCheck, MapPin, Briefcase, Search, SlidersHorizontal, ChevronDown, ListFilter, Bookmark, Send, Users, History } from "lucide-react";
+import { RefreshCcw, Loader2, Sparkles, CheckCheck, MapPin, Briefcase, Search, SlidersHorizontal, ChevronDown, ListFilter, Bookmark, Send, Users, History, Globe } from "lucide-react";
 import { Job, JobView } from "@/lib/types";
+import { AGENT_CONFIG } from "@/lib/config";
 import { useUserId } from "@/hooks/useUserId";
 import JobCard from "@/components/JobCard";
 import { cn } from "@/lib/utils";
@@ -228,8 +229,24 @@ export default function Home() {
                   className="bg-white text-black px-8 py-3 rounded-xl font-black flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-zinc-200 active:scale-95 transition-all"
                 >
                   {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
-                  <span className="text-xs uppercase tracking-widest">Execute Scan</span>
+                  <span className="text-xs uppercase tracking-widest">{syncing ? 'Scanning...' : 'Execute Scan'}</span>
                 </button>
+              </div>
+
+              <div className="flex items-center gap-4 mt-6">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-full border border-white/5">
+                  <Globe className="w-3 h-3 text-zinc-500" />
+                  <span className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-widest">
+                    Coverage: {AGENT_CONFIG.searchSites.length} Verified Boards
+                  </span>
+                </div>
+                
+                {healthStatus?.database === 'connected' && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 rounded-full border border-emerald-500/10">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    <span className="text-[10px] font-mono font-bold text-emerald-500 uppercase tracking-widest">Core Sync: Online</span>
+                  </div>
+                )}
               </div>
 
               {syncError && (

@@ -19,21 +19,28 @@ export async function GET(request: Request) {
     }
     if (checkOnly) return NextResponse.json({ success: true });
 
-    const role = searchParams.get('role') || AGENT_CONFIG.roles[0];
-    const location = searchParams.get('location') || AGENT_CONFIG.locations[0];
+    const roleParam = searchParams.get('role') || AGENT_CONFIG.roles[0];
+    const locationParam = searchParams.get('location') || AGENT_CONFIG.locations[0];
     
+    // Broaden role using synonyms
+    const role = AGENT_CONFIG.synonyms[roleParam] || `"${roleParam}"`;
+    
+    // Expand location (e.g., Delhi -> NCR)
+    let location = locationParam;
+    if (locationParam.toLowerCase() === 'delhi') {
+      location = '(Delhi OR Noida OR Gurgaon OR NCR)';
+    } else {
+      location = `"${locationParam}"`;
+    }
+
     await createTables();
 
-    // Define sites to search
-    const sites = [
-      'site:boards.greenhouse.io',
-      'site:jobs.lever.co',
-      'site:linkedin.com/jobs'
-    ];
+    // Define sites to search from config
+    const sites = AGENT_CONFIG.searchSites;
 
     const results = [];
     for (const site of sites) {
-      // Relaxed query: removed quotes around role and location to increase match surface
+      // Construction of broad query using expanded parameters
       const query = `${site} ${role} ${location} after:${AGENT_CONFIG.searchAfterDate}`;
       console.log(`Searching: ${query}`);
       const listings = await searchJobs(query);
