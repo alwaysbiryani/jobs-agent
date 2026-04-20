@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createTables, saveJob } from '@/lib/db';
-import { searchJobsWithKey, parseSource } from '@/lib/scout';
+import { ensureSchemaReady, saveJob } from '@/lib/db';
+import { toErrorResponse } from '@/lib/errors';
 import { enrichJobWithKey } from '@/lib/enricher';
 import { AGENT_CONFIG } from '@/lib/config';
+import { parseSource, searchJobsWithKey } from '@/lib/scout';
 
 export const maxDuration = 300;
 
@@ -13,17 +14,61 @@ const syncSchema = z.object({
   customSites: z.array(z.string()).max(12).optional().default([]),
 });
 
-function hasSyncAuthorization(request: Request) {
+type AuthResult = {
+  authenticated: boolean;
+  usedLegacy: boolean;
+};
+
+function getBearerToken(request: Request) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader) return null;
+
+  const [scheme, token] = authHeader.split(/\s+/, 2);
+  if (!scheme || !token || scheme.toLowerCase() !== 'bearer') return null;
+  return token.trim();
+}
+
+function resolveCronAuth(request: Request, searchParams?: URLSearchParams): AuthResult {
   const expected = process.env.CRON_SECRET;
-  if (!expected) return true;
+  if (!expected) return { authenticated: true, usedLegacy: false };
 
-  const provided = request.headers.get('x-cron-secret');
-  if (provided === expected) return true;
+  const bearer = getBearerToken(request);
+  if (bearer && bearer === expected) return { authenticated: true, usedLegacy: false };
 
-  // Allow browser-originated interactive scans while still requiring secret
-  // for server-to-server or cron-style invocations.
-  const origin = request.headers.get('origin');
-  return Boolean(origin);
+  const headerSecret = request.headers.get('x-cron-secret');
+  if (headerSecret && headerSecret === expected) return { authenticated: true, usedLegacy: true };
+
+  const queryToken = searchParams?.get('token');
+  if (queryToken && queryToken === expected) return { authenticated: true, usedLegacy: true };
+
+  return { authenticated: false, usedLegacy: false };
+}
+
+function syncResponse(body: unknown, status: number, auth?: AuthResult) {
+  const headers = new Headers();
+  if (auth?.usedLegacy) {
+    headers.set('X-Auth-Deprecated', 'true');
+  }
+
+  return NextResponse.json(body, { status, headers });
+}
+
+function readHeaderKey(request: Request, key: string) {
+  const value = request.headers.get(key);
+  return value ? value.trim() : '';
+}
+
+function resolveSyncKeys(request: Request, allowServerKeys: boolean) {
+  const serperFromHeader = readHeaderKey(request, 'x-serper-key');
+  const geminiFromHeader = readHeaderKey(request, 'x-gemini-key');
+
+  const serperFromEnv = allowServerKeys ? process.env.SERPER_API_KEY || '' : '';
+  const geminiFromEnv = allowServerKeys ? process.env.GEMINI_API_KEY || '' : '';
+
+  return {
+    serperKey: serperFromHeader || serperFromEnv,
+    geminiKey: geminiFromHeader || geminiFromEnv || undefined,
+  };
 }
 
 function sanitizeSite(site: string) {
@@ -67,8 +112,16 @@ function buildSearchQueries(site: string, roleParam: string, locationParam: stri
 
 function scoreListingRelevance(title: string, role: string, location: string) {
   const titleLower = title.toLowerCase();
-  const roleTokens = role.toLowerCase().replace(/[^\w\s]/g, ' ').split(/\s+/).filter((token) => token.length > 2);
-  const locationTokens = location.toLowerCase().replace(/[^\w\s]/g, ' ').split(/\s+/).filter((token) => token.length > 2);
+  const roleTokens = role
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length > 2);
+  const locationTokens = location
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length > 2);
   const roleHits = roleTokens.filter((token) => titleLower.includes(token)).length;
   const locationHits = locationTokens.filter((token) => titleLower.includes(token)).length;
   return roleHits * 2 + locationHits;
@@ -107,11 +160,13 @@ async function runSync({
   locationParam: string;
   customSites: string[];
   serperKey: string;
-  geminiKey: string;
+  geminiKey?: string;
 }) {
   const cleanRoleParam = cleanInput(roleParam);
   const cleanLocationParam = cleanInput(locationParam);
-  await createTables();
+
+  // Preflight schema/database connectivity before network-heavy crawl operations.
+  await ensureSchemaReady();
 
   const safeCustomSites = customSites.map(sanitizeSite).filter((site): site is string => Boolean(site));
   const sites = Array.from(new Set([...AGENT_CONFIG.searchSites, ...safeCustomSites]));
@@ -149,7 +204,11 @@ async function runSync({
     .map((entry) => entry.item);
 
   if (deduped.length === 0) {
-    return { success: false, error: `No jobs found for ${cleanRoleParam} in ${cleanLocationParam}. Try broader role/location terms.` };
+    return {
+      success: false,
+      error: `No jobs found for ${cleanRoleParam} in ${cleanLocationParam}. Try broader role/location terms.`,
+      enrichmentEnabled: Boolean(geminiKey),
+    };
   }
 
   const syncedJobs = [];
@@ -161,11 +220,14 @@ async function runSync({
       continue;
     }
 
-    if (AGENT_CONFIG.includedCompanies.length > 0 && !AGENT_CONFIG.includedCompanies.some((inc) => company.toLowerCase().includes(inc.toLowerCase()))) {
+    if (
+      AGENT_CONFIG.includedCompanies.length > 0 &&
+      !AGENT_CONFIG.includedCompanies.some((inc) => company.toLowerCase().includes(inc.toLowerCase()))
+    ) {
       continue;
     }
 
-    const metadata = await enrichJobWithKey(listing.link, geminiKey);
+    const metadata = geminiKey ? await enrichJobWithKey(listing.link, geminiKey) : null;
 
     const jobData = {
       title: listing.title.split(' - ')[0].trim(),
@@ -185,26 +247,34 @@ async function runSync({
     syncedJobs.push(jobData);
   }
 
-  return { success: true, count: syncedJobs.length, jobs: syncedJobs };
+  return {
+    success: true,
+    count: syncedJobs.length,
+    jobs: syncedJobs,
+    enrichmentEnabled: Boolean(geminiKey),
+  };
 }
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const checkOnly = searchParams.get('check') === 'true';
 
-  const serperKey = process.env.SERPER_API_KEY || request.headers.get('x-serper-key') || '';
-  const geminiKey = process.env.GEMINI_API_KEY || request.headers.get('x-gemini-key') || '';
-
-  if (!serperKey || !geminiKey) {
-    const error = `Missing API keys: ${!serperKey ? 'SERPER ' : ''}${!geminiKey ? 'GEMINI' : ''}`;
-    return NextResponse.json({ success: false, error }, { status: checkOnly ? 200 : 400 });
+  const auth = resolveCronAuth(request, searchParams);
+  if (process.env.CRON_SECRET && !auth.authenticated) {
+    return NextResponse.json({ code: 'UNAUTHORIZED', success: false, error: 'Unauthorized' }, { status: 401 });
   }
 
-  if (checkOnly) return NextResponse.json({ success: true });
+  const { serperKey, geminiKey } = resolveSyncKeys(request, true);
+  if (!serperKey) {
+    return syncResponse(
+      { code: 'MISSING_SERPER_API_KEY', success: false, error: 'Missing required Serper API key.' },
+      checkOnly ? 200 : 400,
+      auth
+    );
+  }
 
-  const cronToken = searchParams.get('token');
-  if (process.env.CRON_SECRET && cronToken !== process.env.CRON_SECRET) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (checkOnly) {
+    return syncResponse({ success: true, enrichmentEnabled: Boolean(geminiKey) }, 200, auth);
   }
 
   const roleParam = searchParams.get('role') || AGENT_CONFIG.roles[0];
@@ -214,27 +284,48 @@ export async function GET(request: Request) {
     .map((site) => site.trim())
     .filter(Boolean);
 
-  const result = await runSync({ roleParam, locationParam, customSites, serperKey, geminiKey });
-  return NextResponse.json(result, { status: result.success ? 200 : 404 });
+  try {
+    const result = await runSync({ roleParam, locationParam, customSites, serperKey, geminiKey });
+    return syncResponse(result, result.success ? 200 : 404, auth);
+  } catch (error: unknown) {
+    console.error('Sync error (GET):', error);
+    const normalized = toErrorResponse(error);
+    return syncResponse(normalized.body, normalized.status, auth);
+  }
 }
 
 export async function POST(request: Request) {
-  if (!hasSyncAuthorization(request)) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  const auth = resolveCronAuth(request);
+  const { serperKey, geminiKey } = resolveSyncKeys(request, auth.authenticated);
+
+  if (!serperKey) {
+    return NextResponse.json(
+      {
+        code: 'MISSING_SERPER_API_KEY',
+        success: false,
+        error: 'Missing required Serper API key. Provide x-serper-key or configure SERPER_API_KEY for trusted cron calls.',
+      },
+      { status: 400 }
+    );
   }
 
   try {
-    const serperKey = process.env.SERPER_API_KEY || request.headers.get('x-serper-key') || '';
-    const geminiKey = process.env.GEMINI_API_KEY || request.headers.get('x-gemini-key') || '';
-
-    if (!serperKey || !geminiKey) {
-      const error = `Missing API keys: ${!serperKey ? 'SERPER ' : ''}${!geminiKey ? 'GEMINI' : ''}`;
-      return NextResponse.json({ success: false, error }, { status: 400 });
+    let parsedBody: unknown;
+    try {
+      parsedBody = await request.json();
+    } catch {
+      return NextResponse.json(
+        { code: 'INVALID_REQUEST', success: false, error: 'Invalid JSON payload' },
+        { status: 400 }
+      );
     }
 
-    const payload = syncSchema.safeParse(await request.json());
+    const payload = syncSchema.safeParse(parsedBody);
     if (!payload.success) {
-      return NextResponse.json({ success: false, error: 'Invalid sync payload', details: payload.error.flatten() }, { status: 400 });
+      return NextResponse.json(
+        { code: 'INVALID_REQUEST', success: false, error: 'Invalid sync payload', details: payload.error.flatten() },
+        { status: 400 }
+      );
     }
 
     const roleParam = payload.data.role || AGENT_CONFIG.roles[0];
@@ -248,9 +339,10 @@ export async function POST(request: Request) {
       geminiKey,
     });
 
-    return NextResponse.json(result, { status: result.success ? 200 : 404 });
+    return syncResponse(result, result.success ? 200 : 404, auth);
   } catch (error: unknown) {
-    console.error('Sync error:', error);
-    return NextResponse.json({ success: false, error: (error as Error).message }, { status: 500 });
+    console.error('Sync error (POST):', error);
+    const normalized = toErrorResponse(error);
+    return syncResponse(normalized.body, normalized.status, auth);
   }
 }

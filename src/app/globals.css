@@ -3,8 +3,8 @@
 :root {
   --background: #000000;
   --foreground: #ffffff;
-  --card: rgba(255, 255, 255, 0.05); /* Modern dark transparency */
-  --card-border: rgba(255, 255, 255, 0.1);
+  --card: #000000;
+  --card-border: #27272a; /* zinc-800 */
   --accent: #ffffff;
   --accent-foreground: #000000;
 }
@@ -30,14 +30,13 @@
 }
 
 @layer utilities {
-  .glass {
+  .blocky {
     background: var(--card);
-    backdrop-filter: blur(8px);
     border: 1px solid var(--card-border);
   }
   
-  .glass-hover {
-    @apply transition-all duration-200 hover:bg-white/[0.08] hover:border-white/20;
+  .blocky-hover {
+    @apply transition-colors duration-150 hover:border-white/40;
   }
 
   .text-balance {

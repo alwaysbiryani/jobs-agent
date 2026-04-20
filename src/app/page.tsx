@@ -28,7 +28,10 @@ const LS_BOARDS = "jobscout_custom_boards";
 const LS_KEYS = "jobscout_api_keys";
 
 type ApiKeys = { serper: string; gemini: string };
+type ApiErrorPayload = { code?: string; error?: string; success?: boolean };
+type SyncResponse = { success: boolean; count?: number; error?: string; code?: string; enrichmentEnabled?: boolean };
 type HealthStatus = {
+  overall?: "ok" | "degraded";
   database: string;
   env: { SERPER_API_KEY: boolean; GEMINI_API_KEY: boolean; DATABASE_URL: boolean; CRON_SECRET: boolean };
 };
@@ -41,6 +44,38 @@ function readJson<T>(key: string, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+async function readJsonResponse<T>(response: Response): Promise<T | null> {
+  try {
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+function getApiErrorMessage(payload: unknown, status: number, fallback: string) {
+  if (payload && typeof payload === "object") {
+    const maybeError = payload as ApiErrorPayload;
+
+    if (maybeError.code === "DEPENDENCY_DATABASE_UNAVAILABLE") {
+      return "Database is unavailable. Set DATABASE_URL and verify connectivity.";
+    }
+
+    if (maybeError.code === "MISSING_SERPER_API_KEY") {
+      return "Serper key is required for scans. Add it in API Keys.";
+    }
+
+    if (typeof maybeError.error === "string" && maybeError.error.trim().length > 0) {
+      return maybeError.error;
+    }
+  }
+
+  if (status === 503) {
+    return "A required dependency is unavailable. Please try again after fixing configuration.";
+  }
+
+  return fallback;
 }
 
 function TabButton({
@@ -58,7 +93,7 @@ function TabButton({
     <button
       onClick={onClick}
       className={cn(
-        "flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap",
+        "flex items-center gap-2 px-4 py-1.5 rounded-sm text-xs font-bold transition-all whitespace-nowrap",
         active ? "bg-white text-black" : "text-zinc-500 hover:text-zinc-300"
       )}
     >
@@ -102,7 +137,7 @@ function BoardsPanel({ open, onClose, customBoards, setCustomBoards }: { open: b
       <aside className="fixed top-0 right-0 z-50 h-full w-full max-w-md bg-zinc-950 border-l border-white/10 flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-6 py-5 border-b border-white/10">
           <h2 className="text-sm font-black text-white uppercase tracking-tight">Job Boards</h2>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors"><X className="w-4 h-4 text-zinc-400" /></button>
+          <button onClick={onClose} className="w-8 h-8 rounded-sm bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors"><X className="w-4 h-4 text-zinc-400" /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
@@ -112,7 +147,7 @@ function BoardsPanel({ open, onClose, customBoards, setCustomBoards }: { open: b
               <input
                 type="text"
                 placeholder="e.g. jobs.example.com"
-                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none"
+                className="flex-1 bg-white/5 border border-white/10 rounded-sm px-3 py-2 text-sm outline-none"
                 value={draft}
                 onChange={(e) => {
                   setDraft(e.target.value);
@@ -120,7 +155,7 @@ function BoardsPanel({ open, onClose, customBoards, setCustomBoards }: { open: b
                 }}
                 onKeyDown={(e) => e.key === "Enter" && addBoard()}
               />
-              <button onClick={addBoard} className="px-3 py-2 bg-white text-black rounded-lg font-black text-xs">Add</button>
+              <button onClick={addBoard} className="px-3 py-2 bg-white text-black rounded-sm font-black text-xs">Add</button>
             </div>
             {error && <p className="text-[10px] font-mono text-red-400 mt-1.5">{error}</p>}
           </div>
@@ -128,9 +163,9 @@ function BoardsPanel({ open, onClose, customBoards, setCustomBoards }: { open: b
           {customBoards.length > 0 && (
             <div className="space-y-1.5">
               {customBoards.map((board) => (
-                <div key={board} className="flex items-center justify-between px-3 py-2 bg-white/5 border border-white/10 rounded-lg">
+                <div key={board} className="flex items-center justify-between px-3 py-2 bg-white/5 border border-white/10 rounded-sm">
                   <span className="text-xs font-mono text-zinc-300">{board}</span>
-                  <button onClick={() => removeBoard(board)} className="w-6 h-6 rounded flex items-center justify-center hover:bg-red-500/10 hover:text-red-400 text-zinc-600">
+                  <button onClick={() => removeBoard(board)} className="w-6 h-6 rounded-none flex items-center justify-center hover:bg-red-500/10 hover:text-red-400 text-zinc-600">
                     <Trash2 className="w-3 h-3" />
                   </button>
                 </div>
@@ -160,12 +195,12 @@ function KeysModal({ open, onClose, apiKeys, setApiKeys }: { open: boolean; onCl
           <button onClick={onClose}><X className="w-4 h-4 text-zinc-400" /></button>
         </div>
         <div className="px-6 py-5 space-y-4">
-          <input type="password" placeholder="Serper API key" className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm" value={apiKeys.serper} onChange={(e) => setApiKeys({ ...apiKeys, serper: e.target.value })} />
-          <input type="password" placeholder="Gemini API key" className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm" value={apiKeys.gemini} onChange={(e) => setApiKeys({ ...apiKeys, gemini: e.target.value })} />
-          <p className="text-[10px] font-mono text-zinc-600">Keys are stored in localStorage and sent only with your sync request.</p>
+          <input type="password" placeholder="Serper API key (required)" className="w-full bg-white/5 border border-white/10 rounded-sm px-3 py-2 text-sm" value={apiKeys.serper} onChange={(e) => setApiKeys({ ...apiKeys, serper: e.target.value })} />
+          <input type="password" placeholder="Gemini API key (optional)" className="w-full bg-white/5 border border-white/10 rounded-sm px-3 py-2 text-sm" value={apiKeys.gemini} onChange={(e) => setApiKeys({ ...apiKeys, gemini: e.target.value })} />
+          <p className="text-[10px] font-mono text-zinc-600">Serper is required for scans. Gemini is optional and only used for enrichment metadata.</p>
         </div>
         <div className="px-6 pb-5">
-          <button onClick={save} className="w-full py-3 bg-white text-black rounded-xl font-black text-xs uppercase tracking-widest">Save Keys</button>
+          <button onClick={save} className="w-full py-3 bg-white text-black rounded-sm font-black text-xs uppercase tracking-widest">Save Keys</button>
         </div>
       </div>
     </>
@@ -180,6 +215,8 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<JobView>("new");
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncInfo, setSyncInfo] = useState<string | null>(null);
+  const [jobsError, setJobsError] = useState<string | null>(null);
   const [searchRole, setSearchRole] = useState("Software Engineer");
   const [searchLocation, setSearchLocation] = useState("Remote");
   const [activeSearch, setActiveSearch] = useState<{ role: string; location: string } | null>(null);
@@ -192,25 +229,37 @@ export default function Home() {
 
   const fetchJobs = useCallback(async (nextRole?: string, nextLocation?: string, tab: JobView = activeTab) => {
     if (!userId) return;
+
     setLoading(true);
+    setJobsError(null);
+
     try {
       const params = new URLSearchParams({ userId, view: tab });
       if (nextRole) params.set("role", nextRole);
       if (nextLocation) params.set("location", nextLocation);
 
       const [jobsRes, healthRes] = await Promise.all([fetch(`/api/jobs?${params.toString()}`), fetch("/api/health")]);
-      const jobsData = await jobsRes.json();
-      const healthData = (await healthRes.json()) as HealthStatus;
 
-      if (Array.isArray(jobsData)) setJobs(jobsData);
-      setHealthStatus(healthData);
+      const jobsData = await readJsonResponse<unknown>(jobsRes);
+      const healthData = await readJsonResponse<HealthStatus>(healthRes);
+      if (healthData) setHealthStatus(healthData);
+
+      if (!jobsRes.ok || !Array.isArray(jobsData)) {
+        const errorMessage = getApiErrorMessage(jobsData, jobsRes.status, "Unable to load jobs.");
+        setJobsError(errorMessage);
+        setJobs([]);
+        return;
+      }
+
+      setJobs(jobsData);
     } catch (error) {
       console.error(error);
+      setJobsError("Network error while loading jobs.");
+      setJobs([]);
     } finally {
       setLoading(false);
     }
   }, [activeTab, userId]);
-
 
   // Initial load for returning users.
   useEffect(() => {
@@ -230,26 +279,33 @@ export default function Home() {
     setSyncing(true);
     setSyncError(null);
     setSyncMessage(null);
+    setSyncInfo(null);
 
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (apiKeys.serper) headers["x-serper-key"] = apiKeys.serper;
       if (apiKeys.gemini) headers["x-gemini-key"] = apiKeys.gemini;
+
       const res = await fetch("/api/cron/sync", {
         method: "POST",
         headers,
         body: JSON.stringify({ role: trimmedRole, location: trimmedLocation, customSites: customBoards }),
       });
-      const data = await res.json();
 
-      if (!res.ok || data.success === false) {
-        setSyncError(data.error || "Sync failed.");
+      const data = await readJsonResponse<SyncResponse>(res);
+      if (!res.ok || !data || data.success === false) {
+        setSyncError(getApiErrorMessage(data, res.status, "Sync failed."));
         setActiveSearch({ role: trimmedRole, location: trimmedLocation });
         await fetchJobs(trimmedRole, trimmedLocation, activeTab);
         return;
       }
 
       setSyncMessage(`Synced ${data.count ?? 0} relevant jobs for ${trimmedRole} in ${trimmedLocation}.`);
+
+      if (data.enrichmentEnabled === false) {
+        setSyncInfo("Enrichment disabled: add a Gemini key to include industry, stage, and summary metadata.");
+      }
+
       setActiveSearch({ role: trimmedRole, location: trimmedLocation });
       await fetchJobs(trimmedRole, trimmedLocation, activeTab);
     } catch (error) {
@@ -287,14 +343,14 @@ export default function Home() {
 
   return (
     <main className="min-h-screen pb-20 bg-black">
-      <nav className="sticky top-0 z-50 glass border-x-0 border-t-0 border-white/10">
+      <nav className="sticky top-0 z-50 blocky border-x-0 border-t-0">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center"><Sparkles className="text-black w-5 h-5" /></div>
+              <div className="w-8 h-8 rounded-sm bg-white flex items-center justify-center"><Sparkles className="text-black w-5 h-5" /></div>
               <span className="font-display font-black text-xl tracking-tight uppercase text-white">JobScout</span>
             </div>
-            <div className="flex items-center p-1 bg-white/5 rounded-xl border border-white/10">
+            <div className="flex items-center p-1 bg-white/5 rounded-sm border border-white/10">
               <TabButton active={activeTab === "new"} onClick={() => void handleTabChange("new")} icon={<ListFilter />} label="New" />
               <TabButton active={activeTab === "saved"} onClick={() => void handleTabChange("saved")} icon={<Bookmark />} label="Saved" />
               <TabButton active={activeTab === "all"} onClick={() => void handleTabChange("all")} icon={<Search />} label="All" />
@@ -302,8 +358,8 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-3">
-            <button onClick={() => setKeysOpen(true)} className="w-9 h-9 rounded-lg border flex items-center justify-center bg-white/5 border-white/10 text-zinc-500 hover:text-white hover:bg-white/10"><Key className="w-4 h-4" /></button>
-            <div className="w-9 h-9 rounded-full border border-white/10 flex items-center justify-center text-[10px] font-mono font-bold text-white">{userId?.slice(0, 2).toUpperCase()}</div>
+            <button onClick={() => setKeysOpen(true)} className="w-9 h-9 rounded-sm border border-white/10 flex items-center justify-center bg-white/5 text-zinc-500 hover:text-white hover:bg-white/10"><Key className="w-4 h-4" /></button>
+            <div className="w-9 h-9 rounded-none border border-white/10 flex items-center justify-center text-[10px] font-mono font-bold text-white">{userId?.slice(0, 2).toUpperCase()}</div>
           </div>
         </div>
       </nav>
@@ -311,16 +367,16 @@ export default function Home() {
       <div className="max-w-7xl mx-auto px-6 pt-12">
         <section className="mb-10 space-y-4">
           <p className="text-zinc-500 font-medium max-w-lg text-sm">Run targeted scans for role + location and review only relevant jobs.</p>
-          <div className="glass p-2 rounded-2xl flex flex-col md:flex-row items-stretch gap-2 max-w-4xl border-white/20">
-            <div className="flex-1 flex items-center gap-3 px-4 py-3 bg-white/5 rounded-xl border border-white/5">
+          <div className="blocky p-2 rounded-sm flex flex-col md:flex-row items-stretch gap-2 max-w-4xl">
+            <div className="flex-1 flex items-center gap-3 px-4 py-3 bg-white/5 rounded-none border border-white/5">
               <Briefcase className="w-4 h-4 text-zinc-500" />
               <input type="text" placeholder="Role..." className="bg-transparent border-none p-0 text-sm text-white outline-none w-full font-bold" value={searchRole} onChange={(e) => setSearchRole(e.target.value)} />
             </div>
-            <div className="flex-1 flex items-center gap-3 px-4 py-3 bg-white/5 rounded-xl border border-white/5">
+            <div className="flex-1 flex items-center gap-3 px-4 py-3 bg-white/5 rounded-none border border-white/5">
               <MapPin className="w-4 h-4 text-zinc-500" />
               <input type="text" placeholder="Location..." className="bg-transparent border-none p-0 text-sm text-white outline-none w-full font-bold" value={searchLocation} onChange={(e) => setSearchLocation(e.target.value)} />
             </div>
-            <button onClick={handleSync} disabled={syncing} className="bg-white text-black px-8 py-3 rounded-xl font-black flex items-center justify-center gap-2 disabled:opacity-50">
+            <button onClick={handleSync} disabled={syncing} className="bg-white text-black px-8 py-3 rounded-none font-black flex items-center justify-center gap-2 disabled:opacity-50">
               {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
               <span className="text-xs uppercase tracking-widest">{syncing ? "Scanning..." : "Execute Scan"}</span>
             </button>
@@ -332,15 +388,22 @@ export default function Home() {
               <span className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-widest">{AGENT_CONFIG.searchSites.length + customBoards.length} Boards</span>
               <Plus className="w-3 h-3 text-zinc-600" />
             </button>
-            {healthStatus?.database === "connected" && (
+            {healthStatus?.database === "connected" ? (
               <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 rounded-full border border-emerald-500/10">
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 <span className="text-[10px] font-mono font-bold text-emerald-500 uppercase tracking-widest">DB Online</span>
               </div>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 rounded-full border border-red-500/10">
+                <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                <span className="text-[10px] font-mono font-bold text-red-400 uppercase tracking-widest">DB Offline</span>
+              </div>
             )}
           </div>
 
+          {jobsError && <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl"><p className="text-xs font-bold text-red-500 uppercase tracking-widest">{jobsError}</p></div>}
           {syncError && <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl"><p className="text-xs font-bold text-red-500 uppercase tracking-widest">{syncError}</p></div>}
+          {syncInfo && <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl"><p className="text-xs font-bold text-amber-300 uppercase tracking-widest">{syncInfo}</p></div>}
           {syncMessage && <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl"><p className="text-xs font-bold text-emerald-400 uppercase tracking-widest">{syncMessage}</p></div>}
         </section>
 
@@ -356,7 +419,7 @@ export default function Home() {
             {filteredJobs.map((job) => <JobCard key={job.id} job={job} onSeen={handleDismiss} onSave={handleSave} />)}
           </div>
         ) : (
-          <div className="glass border-dashed rounded-3xl py-24 flex flex-col items-center justify-center text-center px-6">
+          <div className="blocky border-dashed rounded-none py-24 flex flex-col items-center justify-center text-center px-6">
             <CheckCheck className="w-8 h-8 text-zinc-800 mb-4" />
             <h2 className="text-xl font-bold text-white mb-2 font-display uppercase tracking-tight">No results yet</h2>
             <p className="text-zinc-600 max-w-sm text-sm font-medium">Try broader role/location terms or add additional boards, then run another scan.</p>
@@ -373,7 +436,7 @@ export default function Home() {
 function FilterSelect({ icon, label, value, options, onChange }: { icon: React.ReactNode; label: string; value: string; options: string[]; onChange: (v: string) => void }) {
   return (
     <div className="relative group/select">
-      <div className="flex items-center gap-2 glass px-3 py-1.5 rounded-lg border-white/10 hover:border-white/30 transition-all cursor-pointer">
+      <div className="flex items-center gap-2 blocky px-3 py-1.5 rounded-sm border-white/10 hover:border-white/30 transition-all cursor-pointer">
         <span className="text-zinc-600 group-hover/select:text-white transition-colors">{icon}</span>
         <span className="text-[11px] font-bold font-mono uppercase tracking-tight text-white/90">{value === "all" ? label : value}</span>
         <ChevronDown className="w-3 h-3 text-zinc-700" />
