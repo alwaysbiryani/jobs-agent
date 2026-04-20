@@ -34,27 +34,59 @@ function sanitizeSite(site: string) {
   return `site:${bare}`;
 }
 
+function cleanInput(value: string) {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
 function normalizeRole(roleParam: string) {
-  return AGENT_CONFIG.synonyms[roleParam] || (roleParam.startsWith('"') ? roleParam : `"${roleParam}"`);
+  const cleanedRole = cleanInput(roleParam);
+  return AGENT_CONFIG.synonyms[cleanedRole] || (cleanedRole.startsWith('"') ? cleanedRole : `"${cleanedRole}"`);
 }
 
 function normalizeLocation(locationParam: string) {
+  const cleanedLocation = cleanInput(locationParam);
   const locationMap = AGENT_CONFIG.locationSynonyms;
-  return locationMap[locationParam] || (locationParam.startsWith('"') ? locationParam : `"${locationParam}"`);
+  return locationMap[cleanedLocation] || (cleanedLocation.startsWith('"') ? cleanedLocation : `"${cleanedLocation}"`);
 }
 
-function scoreListing(title: string, role: string) {
+function buildSearchQueries(site: string, roleParam: string, locationParam: string, afterDate: string) {
+  const strictRole = normalizeRole(roleParam);
+  const strictLocation = normalizeLocation(locationParam);
+  const broadRole = roleParam.replace(/"/g, '').trim();
+  const broadLocation = locationParam.replace(/"/g, '').trim();
+  const strict = `${site} ${strictRole} ${strictLocation} after:${afterDate}`;
+  const relaxed = `${site} ${strictRole} ${strictLocation}`;
+  const broad = `${site} ${broadRole} ${broadLocation} job`;
+
+  return {
+    strict,
+    relaxed,
+    broad,
+  };
+}
+
+function scoreListingRelevance(title: string, role: string, location: string) {
   const titleLower = title.toLowerCase();
-  const terms = role.toLowerCase().replace(/["()]/g, '').split(/\s+or\s+|\s+/).filter(Boolean);
-  return terms.reduce((score, term) => score + (titleLower.includes(term) ? 1 : 0), 0);
+  const roleTokens = role.toLowerCase().replace(/[^\w\s]/g, ' ').split(/\s+/).filter((token) => token.length > 2);
+  const locationTokens = location.toLowerCase().replace(/[^\w\s]/g, ' ').split(/\s+/).filter((token) => token.length > 2);
+  const roleHits = roleTokens.filter((token) => titleLower.includes(token)).length;
+  const locationHits = locationTokens.filter((token) => titleLower.includes(token)).length;
+  return roleHits * 2 + locationHits;
 }
 
-function extractCompany(title: string) {
-  const patterns = [/\sat\s([^|\-•]+)/i, /^([^\-•]+)\s[-•]/, /\|\s([^|]+)$/];
+function extractCompany(title: string, source: string) {
+  const normalized = title.replace(/\s+/g, ' ').trim();
+  const patterns = [/\s+at\s+([^|,-]+)/i, /\s+\|\s+([^|,-]+)/, /\s+-\s+([^|,-]+)/, /([^|,-]+)\s+(is hiring|careers|jobs?)/i];
   for (const pattern of patterns) {
-    const match = title.match(pattern);
+    const match = normalized.match(pattern);
     if (match?.[1]) return match[1].trim();
   }
+
+  if (source.includes('linkedin')) {
+    const linkedInPieces = normalized.split(' - ');
+    if (linkedInPieces.length > 1) return linkedInPieces[1].trim();
+  }
+
   return 'Unknown';
 }
 
@@ -77,8 +109,8 @@ async function runSync({
   serperKey: string;
   geminiKey: string;
 }) {
-  const role = normalizeRole(roleParam);
-  const location = normalizeLocation(locationParam);
+  const cleanRoleParam = cleanInput(roleParam);
+  const cleanLocationParam = cleanInput(locationParam);
   await createTables();
 
   const safeCustomSites = customSites.map(sanitizeSite).filter((site): site is string => Boolean(site));
@@ -87,30 +119,43 @@ async function runSync({
 
   const rawResults: Array<{ title: string; link: string; snippet?: string }> = [];
   for (const site of sites) {
-    const strictQuery = `${site} ${role} ${location} after:${afterDate}`;
-    const strictResults = await searchJobsWithKey(strictQuery, serperKey, true);
+    const listingsForSite: Array<{ title: string; link: string; snippet?: string }> = [];
+    const queries = buildSearchQueries(site, cleanRoleParam, cleanLocationParam, afterDate);
 
-    if (strictResults.length > 0) {
-      rawResults.push(...strictResults);
-      continue;
+    const strictListings = await searchJobsWithKey(queries.strict, serperKey, true);
+    listingsForSite.push(...strictListings);
+
+    if (listingsForSite.length < 10) {
+      const relaxedListings = await searchJobsWithKey(queries.relaxed, serperKey, false);
+      listingsForSite.push(...relaxedListings);
     }
 
-    const fallbackQuery = `${site} ${role} ${location}`;
-    const fallbackResults = await searchJobsWithKey(fallbackQuery, serperKey, false);
-    rawResults.push(...fallbackResults);
+    if (listingsForSite.length < 10) {
+      const broadListings = await searchJobsWithKey(queries.broad, serperKey, false);
+      listingsForSite.push(...broadListings);
+    }
+
+    rawResults.push(...listingsForSite);
   }
 
   const deduped = Array.from(new Map(rawResults.map((item) => [item.link, item])).values())
     .filter((item) => item?.link && item?.title)
-    .sort((a, b) => scoreListing(b.title, role) - scoreListing(a.title, role));
+    .map((item) => ({
+      item,
+      score: scoreListingRelevance(item.title, cleanRoleParam, cleanLocationParam),
+    }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((entry) => entry.item);
 
   if (deduped.length === 0) {
-    return { success: false, error: `No jobs found for ${roleParam} in ${locationParam}. Try broader role/location terms.` };
+    return { success: false, error: `No jobs found for ${cleanRoleParam} in ${cleanLocationParam}. Try broader role/location terms.` };
   }
 
   const syncedJobs = [];
   for (const listing of deduped.slice(0, 25)) {
-    const company = extractCompany(listing.title);
+    const source = parseSource(listing.link);
+    const company = extractCompany(listing.title, source);
 
     if (AGENT_CONFIG.excludedCompanies.some((ex) => company.toLowerCase().includes(ex.toLowerCase()))) {
       continue;
@@ -125,15 +170,15 @@ async function runSync({
     const jobData = {
       title: listing.title.split(' - ')[0].trim(),
       company,
-      location: locationParam,
+      location: cleanLocationParam,
       url: listing.link,
-      source: parseSource(listing.link),
+      source,
       industry: metadata?.industry,
       company_size: metadata?.company_size,
       company_stage: metadata?.company_stage,
       description_summary: metadata?.summary,
-      search_role: roleParam,
-      search_location: locationParam,
+      search_role: cleanRoleParam,
+      search_location: cleanLocationParam,
     };
 
     await saveJob(jobData);
