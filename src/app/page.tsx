@@ -26,7 +26,7 @@ function TabButton({
         active ? "bg-white text-black" : "text-zinc-500 hover:text-zinc-300"
       )}
     >
-      {cloneElement(icon as React.ReactElement, { className: "w-3.5 h-3.5" })}
+      {cloneElement(icon as React.ReactElement<any>, { className: "w-3.5 h-3.5" })}
       {label}
     </button>
   );
@@ -137,8 +137,8 @@ export default function Home() {
     });
   }, [jobs, filter]);
 
-  const industries = useMemo(() => Array.from(new Set(jobs.map(j => j.industry).filter(Boolean))).sort(), [jobs]);
-  const stages = useMemo(() => Array.from(new Set(jobs.map(j => j.company_stage).filter(Boolean))).sort(), [jobs]);
+  const industries = useMemo(() => Array.from(new Set(jobs.map(j => j.industry).filter((i): i is string => !!i))).sort(), [jobs]);
+  const stages = useMemo(() => Array.from(new Set(jobs.map(j => j.company_stage).filter((s): s is string => !!s))).sort(), [jobs]);
 
   return (
     <main className="min-h-screen pb-20 bg-black">
