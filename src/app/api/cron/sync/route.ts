@@ -6,6 +6,66 @@ import { AGENT_CONFIG } from '@/lib/config';
 
 export const maxDuration = 300; // 5 minutes for enrichment
 
+type SearchListing = {
+  title?: string;
+  link?: string;
+  snippet?: string;
+};
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function tokenize(value: string) {
+  return value
+    .replace(/[()"]/g, ' ')
+    .split(/\s+OR\s+|\s+/i)
+    .map(token => token.trim())
+    .filter(token => token.length > 2 && !['and', 'or'].includes(token.toLowerCase()));
+}
+
+function getRecentAfterDate(daysAgo = 45) {
+  const date = new Date();
+  date.setDate(date.getDate() - daysAgo);
+  return date.toISOString().slice(0, 10);
+}
+
+function buildQueryVariants(site: string, role: string, location: string, afterDate: string) {
+  return [
+    `${site} ${role} ${location} (hiring OR careers OR opening) after:${afterDate}`,
+    `${site} ${role} ${location} (job OR role)`,
+    `${site} ${role} (remote OR hybrid OR onsite)`,
+  ];
+}
+
+function calcRelevanceScore(
+  listing: SearchListing,
+  roleTokens: string[],
+  locationTokens: string[]
+) {
+  const title = (listing.title || '').toLowerCase();
+  const snippet = (listing.snippet || '').toLowerCase();
+  const text = `${title} ${snippet}`;
+  const link = (listing.link || '').toLowerCase();
+  let score = 0;
+
+  for (const token of roleTokens) {
+    const rx = new RegExp(`\\b${escapeRegex(token.toLowerCase())}\\b`, 'i');
+    if (rx.test(text)) score += title.includes(token.toLowerCase()) ? 5 : 3;
+  }
+
+  for (const token of locationTokens) {
+    const rx = new RegExp(`\\b${escapeRegex(token.toLowerCase())}\\b`, 'i');
+    if (rx.test(text) || link.includes(token.toLowerCase())) score += 2;
+  }
+
+  if (title.includes('senior') || title.includes('staff') || title.includes('lead')) score += 1;
+  if (title.includes('intern') || title.includes('graduate')) score -= 3;
+  if (link.includes('/jobs') || link.includes('/careers')) score += 1;
+
+  return score;
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -32,7 +92,7 @@ export async function GET(request: Request) {
                  (roleParam.startsWith('"') ? roleParam : `"${roleParam}"`);
 
     // Expand location using config map, defaulting to quoted search
-    const location = (AGENT_CONFIG as any).locationSynonyms[locationParam] ||
+    const location = AGENT_CONFIG.locationSynonyms[locationParam] ||
                     (locationParam.startsWith('"') ? locationParam : `"${locationParam}"`);
 
     await createTables();
@@ -44,29 +104,53 @@ export async function GET(request: Request) {
       : [];
     const sites = [...AGENT_CONFIG.searchSites, ...customSites];
 
-    const results = [];
+    const results: SearchListing[] = [];
+    const recentAfterDate = getRecentAfterDate();
+    const roleTokens = tokenize(roleParam);
+    const locationTokens = tokenize(locationParam);
+
     for (const site of sites) {
-      const query = `${site} ${role} ${location} after:${AGENT_CONFIG.searchAfterDate}`;
-      console.log(`Searching: ${query}`);
-      const listings = await searchJobsWithKey(query, serperKey);
-      console.log(`Found ${listings.length} results for ${site}`);
-      results.push(...listings);
+      const queryVariants = buildQueryVariants(site, role, location, recentAfterDate);
+      const siteResults: SearchListing[] = [];
+
+      for (const query of queryVariants) {
+        console.log(`Searching: ${query}`);
+        const listings = await searchJobsWithKey(query, serperKey);
+        siteResults.push(...listings);
+        if (siteResults.length >= 10) break;
+      }
+
+      console.log(`Found ${siteResults.length} raw results for ${site}`);
+      results.push(...siteResults);
     }
 
     // Deduplicate
-    const uniqueListings = Array.from(new Map(results.map(item => [item.link, item])).values());
-    console.log(`Unique listings found: ${uniqueListings.length}`);
+    const uniqueListings = Array.from(new Map(results.filter(item => !!item.link).map(item => [item.link, item])).values());
+    const rankedListings = uniqueListings
+      .map(item => ({ ...item, relevanceScore: calcRelevanceScore(item, roleTokens, locationTokens) }))
+      .filter(item => item.relevanceScore >= 3)
+      .sort((a, b) => b.relevanceScore - a.relevanceScore);
 
-    if (uniqueListings.length === 0) {
+    console.log(`Unique listings found: ${uniqueListings.length}`);
+    console.log(`Relevant listings after ranking: ${rankedListings.length}`);
+
+    if (rankedListings.length === 0) {
       return NextResponse.json({
         success: false,
-        error: `No jobs found for ${role} in ${location}. Try broadening your search terms or checking your API limits.`
+        error: `No relevant jobs found for ${roleParam} in ${locationParam}. Try broadening the role/location, or add more boards in settings.`,
+        stats: {
+          rawResults: results.length,
+          uniqueResults: uniqueListings.length,
+          relevantResults: 0
+        }
       }, { status: 404 });
     }
 
     const syncedJobs = [];
-    for (const listing of uniqueListings.slice(0, 15)) {
-      const companyMatch = listing.title.match(/at\s+(.*?)(?=\s+|$)/) || listing.title.match(/(.*?)\s+Job/) || [null, listing.title.split(' - ')[1] || 'Unknown'];
+    for (const listing of rankedListings.slice(0, 15)) {
+      const safeTitle = listing.title || 'Unknown Role';
+      const safeLink = listing.link || '';
+      const companyMatch = safeTitle.match(/at\s+(.*?)(?=\s+|$)/) || safeTitle.match(/(.*?)\s+Job/) || [null, safeTitle.split(' - ')[1] || 'Unknown'];
       const company = companyMatch[1] || 'Unknown';
 
       if (AGENT_CONFIG.excludedCompanies.some(ex => company.toLowerCase().includes(ex.toLowerCase()))) {
@@ -79,19 +163,19 @@ export async function GET(request: Request) {
         continue;
       }
 
-      console.log(`Enriching: ${listing.title} from ${listing.link}`);
-      const metadata = await enrichJobWithKey(listing.link, geminiKey);
+      console.log(`Enriching: ${safeTitle} from ${safeLink}`);
+      const metadata = await enrichJobWithKey(safeLink, geminiKey);
 
       if (!metadata) {
-        console.warn(`Failed to enrich job at ${listing.link}`);
+        console.warn(`Failed to enrich job at ${safeLink}`);
       }
 
       const jobData = {
-        title: listing.title.split(' - ')[0],
+        title: safeTitle.split(' - ')[0],
         company: company,
         location: location,
-        url: listing.link,
-        source: parseSource(listing.link),
+        url: safeLink,
+        source: parseSource(safeLink),
         industry: metadata?.industry,
         company_size: metadata?.company_size,
         company_stage: metadata?.company_stage,
@@ -105,7 +189,16 @@ export async function GET(request: Request) {
     }
 
     console.log(`Successfully synced ${syncedJobs.length} jobs.`);
-    return NextResponse.json({ success: true, count: syncedJobs.length, jobs: syncedJobs });
+    return NextResponse.json({
+      success: true,
+      count: syncedJobs.length,
+      jobs: syncedJobs,
+      stats: {
+        rawResults: results.length,
+        uniqueResults: uniqueListings.length,
+        relevantResults: rankedListings.length
+      }
+    });
   } catch (error: unknown) {
     console.error('Sync error:', error);
     return NextResponse.json({ success: false, error: (error as Error).message }, { status: 500 });

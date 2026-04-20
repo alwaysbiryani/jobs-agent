@@ -279,6 +279,7 @@ export default function Home() {
   const [syncing, setSyncing] = useState(false);
   const [activeTab, setActiveTab] = useState<JobView>("new");
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncStats, setSyncStats] = useState<{ rawResults: number; uniqueResults: number; relevantResults: number } | null>(null);
   const [healthStatus, setHealthStatus] = useState<{ database: string; env: any } | null>(null);
 
   const [searchRole, setSearchRole] = useState("Software Engineer");
@@ -350,6 +351,7 @@ export default function Home() {
   const handleSync = useCallback(async () => {
     setSyncing(true);
     setSyncError(null);
+    setSyncStats(null);
     setActiveSearch({ role: searchRole, location: searchLocation });
 
     try {
@@ -365,6 +367,7 @@ export default function Home() {
 
       const res = await fetch(`/api/cron/sync?${params.toString()}`, { headers });
       const data = await res.json();
+      if (data?.stats) setSyncStats(data.stats);
 
       if (!res.ok || data.success === false) {
         setSyncError(data.error || "Sync failed. Check your API keys and database connection.");
@@ -483,8 +486,8 @@ export default function Home() {
               {/* Subtitle only — no big heading */}
               <p className="text-zinc-500 font-medium max-w-lg text-base">
                 {activeSearch
-                  ? `Showing strictly verified results for ${activeSearch.role} in ${activeSearch.location}.`
-                  : `Welcome back. Exploring verified boards for top trending roles globally.`}
+                  ? `Showing best-matching roles for ${activeSearch.role} in ${activeSearch.location}.`
+                  : `Run a focused scan by role and location to surface the most relevant openings.`}
               </p>
 
               {/* Search bar */}
@@ -518,6 +521,14 @@ export default function Home() {
                   <span className="text-xs uppercase tracking-widest">{syncing ? "Scanning..." : "Execute Scan"}</span>
                 </button>
               </div>
+
+              {syncStats && !syncError && (
+                <div className="p-3 bg-white/[0.03] border border-white/10 rounded-xl">
+                  <p className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-400">
+                    Scan quality · {syncStats.relevantResults} relevant from {syncStats.uniqueResults} unique ({syncStats.rawResults} raw)
+                  </p>
+                </div>
+              )}
 
               {/* Status badges row */}
               <div className="flex items-center flex-wrap gap-3">
@@ -568,6 +579,11 @@ export default function Home() {
                   <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse mt-0.5 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-bold text-red-500 uppercase tracking-widest">{syncError}</p>
+                    {syncStats && (
+                      <p className="mt-1 text-[10px] font-mono text-red-300">
+                        Last scan stats: {syncStats.relevantResults} relevant / {syncStats.uniqueResults} unique / {syncStats.rawResults} raw
+                      </p>
+                    )}
                     {(keysMissing.serper || keysMissing.gemini) && (
                       <button
                         onClick={() => setKeysOpen(true)}
@@ -634,7 +650,9 @@ export default function Home() {
               <CheckCheck className="w-8 h-8 text-zinc-800" />
             </div>
             <h2 className="text-xl font-bold text-white mb-2 font-display uppercase tracking-tight">Queue Empty</h2>
-            <p className="text-zinc-600 max-w-sm text-sm font-medium">No active entries found for this view.</p>
+            <p className="text-zinc-600 max-w-sm text-sm font-medium">
+              No active entries found for this view. Try broadening your role/location search or add more boards.
+            </p>
           </div>
         )}
 
