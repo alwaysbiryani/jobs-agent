@@ -3,6 +3,7 @@ import { getJobs, saveJobInteraction } from '@/lib/db';
 import { JobView } from '@/lib/types';
 
 export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
   const userId = searchParams.get('userId');
   const view = (searchParams.get('view') as JobView) || 'all';
   const role = searchParams.get('role') || undefined;
