@@ -152,7 +152,11 @@ export async function getJobs(userId: string, view: JobView = 'new', role?: stri
       FROM jobs j
       JOIN job_interactions i ON j.id = i.job_id
       WHERE i.user_id = ${userId} AND i.status = 'saved'
-        AND (${r}::text IS NULL OR j.title ILIKE ${r} OR j.search_role ILIKE ${r})
+        AND (
+          ${r}::text IS NULL
+          OR j.search_role ILIKE ${r}
+          OR (j.search_role IS NULL AND j.title ILIKE ${r})
+        )
         AND (${l}::text IS NULL OR j.location ILIKE ${l} OR j.search_location ILIKE ${l})
       ORDER BY i.created_at DESC LIMIT 100
     `;
@@ -194,7 +198,11 @@ export async function getJobs(userId: string, view: JobView = 'new', role?: stri
       FROM jobs j
       LEFT JOIN job_interactions i ON j.id = i.job_id AND i.user_id = ${userId}
       WHERE 1=1
-        AND (${r}::text IS NULL OR j.title ILIKE ${r} OR j.search_role ILIKE ${r})
+        AND (
+          ${r}::text IS NULL
+          OR j.search_role ILIKE ${r}
+          OR (j.search_role IS NULL AND j.title ILIKE ${r})
+        )
         AND (${l}::text IS NULL OR j.location ILIKE ${l} OR j.search_location ILIKE ${l})
       ORDER BY j.discovered_at DESC LIMIT 200
     `;
@@ -206,7 +214,11 @@ export async function getJobs(userId: string, view: JobView = 'new', role?: stri
     FROM jobs j
     LEFT JOIN job_interactions i ON j.id = i.job_id AND i.user_id = ${userId}
     WHERE (i.status IS NULL OR i.status = 'seen')
-      AND (${r}::text IS NULL OR j.title ILIKE ${r} OR j.search_role ILIKE ${r})
+      AND (
+        ${r}::text IS NULL
+        OR j.search_role ILIKE ${r}
+        OR (j.search_role IS NULL AND j.title ILIKE ${r})
+      )
       AND (${l}::text IS NULL OR j.location ILIKE ${l} OR j.search_location ILIKE ${l})
     ORDER BY j.discovered_at DESC LIMIT 100
   `;
