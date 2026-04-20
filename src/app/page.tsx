@@ -59,12 +59,12 @@ export default function Home() {
     if (!userId) return;
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        userId,
-        view: activeTab,
-        ...(role && { role }),
-        ...(location && { location })
-      });
+      const params = new URLSearchParams();
+      params.append('userId', userId);
+      params.append('view', activeTab);
+      if (role) params.append('role', role);
+      if (location) params.append('location', location);
+      
       const res = await fetch(`/api/jobs?${params.toString()}`);
       const data = await res.json();
       if (Array.isArray(data)) {
@@ -196,7 +196,7 @@ export default function Home() {
           
           <div className="flex items-center gap-4">
             <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center text-[10px] font-mono font-bold text-white">
-              {userId?.slice(0, 2).toUpperCase()}
+              {(userId || "??").slice(0, 2).toUpperCase()}
             </div>
           </div>
         </div>

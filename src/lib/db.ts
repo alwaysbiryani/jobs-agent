@@ -146,8 +146,8 @@ export async function getJobs(userId: string, view: JobView = 'new', role?: stri
       FROM jobs j
       LEFT JOIN job_interactions i ON j.id = i.job_id AND i.user_id = $1
       WHERE (i.status IS NULL OR i.status = 'seen')
-        ${roleFilter ? 'AND (j.title ILIKE $2 OR j.search_role ILIKE $2)' : 'AND ($2 IS NULL OR true)'}
-        ${locationFilter ? 'AND (j.location ILIKE $3 OR j.search_location ILIKE $3)' : 'AND ($3 IS NULL OR true)'}
+        ${roleFilter ? 'AND (j.title ILIKE $2 OR j.search_role ILIKE $2)' : ''}
+        ${locationFilter ? 'AND (j.location ILIKE $3 OR j.search_location ILIKE $3)' : ''}
       ORDER BY j.discovered_at DESC LIMIT 100
     `,
     saved: `
@@ -155,8 +155,8 @@ export async function getJobs(userId: string, view: JobView = 'new', role?: stri
       FROM jobs j
       JOIN job_interactions i ON j.id = i.job_id
       WHERE i.user_id = $1 AND i.status = 'saved'
-        ${roleFilter ? 'AND (j.title ILIKE $2 OR j.search_role ILIKE $2)' : 'AND ($2 IS NULL OR true)'}
-        ${locationFilter ? 'AND (j.location ILIKE $3 OR j.search_location ILIKE $3)' : 'AND ($3 IS NULL OR true)'}
+        ${roleFilter ? 'AND (j.title ILIKE $2 OR j.search_role ILIKE $2)' : ''}
+        ${locationFilter ? 'AND (j.location ILIKE $3 OR j.search_location ILIKE $3)' : ''}
       ORDER BY i.created_at DESC LIMIT 100
     `,
     applied: `
@@ -185,8 +185,8 @@ export async function getJobs(userId: string, view: JobView = 'new', role?: stri
       FROM jobs j
       LEFT JOIN job_interactions i ON j.id = i.job_id AND i.user_id = $1
       WHERE 1=1
-        ${roleFilter ? 'AND (j.title ILIKE $2 OR j.search_role ILIKE $2)' : 'AND ($2 IS NULL OR true)'}
-        ${locationFilter ? 'AND (j.location ILIKE $3 OR j.search_location ILIKE $3)' : 'AND ($3 IS NULL OR true)'}
+      ${roleFilter ? 'AND (j.title ILIKE $2 OR j.search_role ILIKE $2)' : ''}
+      ${locationFilter ? 'AND (j.location ILIKE $3 OR j.search_location ILIKE $3)' : ''}
       ORDER BY j.discovered_at DESC LIMIT 200
     `,
   };
