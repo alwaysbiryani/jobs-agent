@@ -1,17 +1,6 @@
 const SERPER_API_KEY = process.env.SERPER_API_KEY;
 
-export interface SearchListing {
-  title: string;
-  link: string;
-  snippet?: string;
-  date?: string;
-}
-
-interface SerperResponse {
-  organic?: SearchListing[];
-}
-
-export async function searchJobs(query: string): Promise<SearchListing[]> {
+export async function searchJobs(query: string) {
   if (!SERPER_API_KEY) {
     console.error('SERPER_API_KEY is missing');
     return [];
@@ -30,12 +19,7 @@ export async function searchJobs(query: string): Promise<SearchListing[]> {
     }),
   });
 
-  if (!response.ok) {
-    console.error(`Serper request failed: ${response.status}`);
-    return [];
-  }
-
-  const data = (await response.json()) as SerperResponse;
+  const data = await response.json();
   return data.organic || [];
 }
 
@@ -44,20 +28,4 @@ export function parseSource(url: string): 'linkedin' | 'greenhouse' | 'lever' | 
   if (url.includes('greenhouse.io')) return 'greenhouse';
   if (url.includes('lever.co')) return 'lever';
   return 'other';
-}
-
-export function normalizeJobUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    parsed.search = '';
-    parsed.hash = '';
-
-    if (parsed.hostname.includes('linkedin.com')) {
-      parsed.pathname = parsed.pathname.replace(/\/$/, '');
-    }
-
-    return parsed.toString();
-  } catch {
-    return url;
-  }
 }

@@ -18,9 +18,8 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body
-        className={`${inter.variable} ${outfit.variable} antialiased bg-[#09090b] text-zinc-100 min-h-screen font-sans`}
+        className={`${inter.variable} ${outfit.variable} antialiased bg-background text-foreground min-h-screen font-sans`}
       >
-        <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(37,99,235,0.1),transparent_50%)] pointer-events-none" />
         <div className="relative z-10">{children}</div>
       </body>
     </html>

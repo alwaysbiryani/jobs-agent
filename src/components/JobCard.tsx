@@ -1,151 +1,103 @@
-import {
-  ExternalLink,
-  Building2,
-  MapPin,
-  Users,
-  Briefcase,
-  Factory,
-  Bookmark,
-  Send,
-  Handshake,
-  XCircle,
-  RotateCcw,
-} from 'lucide-react';
-import { Job, JobStatus } from '@/lib/types';
+import { CheckCircle, Building2, MapPin, Briefcase, Factory, ArrowUpRight, Bookmark, BookmarkCheck, Send, Users } from 'lucide-react';
+import { Job } from '@/lib/types';
 
 interface JobCardProps {
   job: Job;
-  onAction: (id: string, action: JobStatus | 'clear') => void;
-  pendingAction?: string | null;
+  onSeen: (id: string) => void;
+  onSave: (id: string, currentlySaved: boolean) => void;
 }
 
-export default function JobCard({ job, onAction, pendingAction }: JobCardProps) {
-  const currentStatus = job.interaction_status || 'new';
-  const isPending = (action: string) => pendingAction === `${job.id}:${action}`;
+export default function JobCard({ job, onSeen, onSave }: JobCardProps) {
+  const isSaved = job.interaction_status === 'saved';
+  const isApplied = job.interaction_status === 'applied';
+  const isInterviewing = job.interaction_status === 'interviewing';
 
   return (
-    <div className="bg-white/5 border border-white/10 rounded-xl p-4 hover:bg-white/[0.08] transition-all group overflow-hidden relative">
-      <div className="flex justify-between items-start mb-3">
-        <div>
-          <h3 className="text-lg font-semibold text-white group-hover:text-blue-400 transition-colors uppercase tracking-tight">
+    <div className="glass glass-hover rounded-2xl p-5 group flex flex-col h-full relative overflow-hidden">
+      {/* Status Overlay Badge */}
+      {(isApplied || isInterviewing) && (
+        <div className="absolute top-0 right-0 pt-1 pr-1">
+          <div className="bg-white text-black text-[9px] font-black px-2 py-0.5 rounded-bl-lg uppercase tracking-tighter flex items-center gap-1">
+            {isApplied ? <Send className="w-2.5 h-2.5" /> : <Users className="w-2.5 h-2.5" />}
+            {job.interaction_status}
+          </div>
+        </div>
+      )}
+
+      <div className="flex justify-between items-start gap-4 mb-4">
+        <div className="flex-1 min-w-0">
+          <h3 className="text-lg font-bold font-display text-white transition-colors truncate">
             {job.title}
           </h3>
-          <p className="text-zinc-400 font-medium flex items-center gap-2 mt-1">
-            <Building2 className="w-4 h-4" /> {job.company}
-          </p>
+          <div className="flex items-center gap-2 mt-1.5 text-zinc-400">
+            <div className="w-5 h-5 rounded-md bg-white/5 flex items-center justify-center border border-white/5">
+              <Building2 className="w-3 h-3" />
+            </div>
+            <span className="text-sm font-medium truncate">{job.company}</span>
+          </div>
         </div>
-        <span className="text-[10px] uppercase tracking-widest px-2 py-1 rounded-full border border-white/10 text-zinc-400 bg-black/20">
-          {currentStatus}
-        </span>
+        <div className="flex gap-2 shrink-0">
+          <button 
+            onClick={() => onSave(job.id, isSaved)}
+            className={`w-8 h-8 flex items-center justify-center rounded-full border transition-all ${
+              isSaved 
+                ? 'bg-white text-black border-white' 
+                : 'bg-white/5 border-white/5 text-zinc-500 hover:text-white hover:border-white/20'
+            }`}
+            title={isSaved ? "Unsave lead" : "Save lead"}
+          >
+            {isSaved ? <BookmarkCheck className="w-4 h-4" /> : <Bookmark className="w-4 h-4" />}
+          </button>
+          <button 
+            onClick={() => onSeen(job.id)}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-white/5 border border-white/5 text-zinc-500 hover:text-red-400 hover:bg-red-400/10 hover:border-red-400/20 transition-all"
+            title="Dismiss"
+          >
+            <CheckCircle className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 mb-3">
-        <span className="bg-blue-500/10 text-blue-400 text-xs px-2 py-1 rounded-md flex items-center gap-1 border border-blue-500/20">
-          <MapPin className="w-3 h-3" /> {job.location}
-        </span>
+      <div className="flex flex-wrap gap-2 mb-5">
+        <Badge icon={<MapPin className="w-3 h-3" />} label={job.location} />
         {job.company_stage && (
-          <span className="bg-purple-500/10 text-purple-400 text-xs px-2 py-1 rounded-md flex items-center gap-1 border border-purple-500/20">
-            <Factory className="w-3 h-3" /> {job.company_stage}
-          </span>
-        )}
-        {job.company_size && (
-          <span className="bg-amber-500/10 text-amber-400 text-xs px-2 py-1 rounded-md flex items-center gap-1 border border-amber-500/20">
-            <Users className="w-3 h-3" /> {job.company_size}
-          </span>
+          <Badge icon={<Factory className="w-3 h-3" />} label={job.company_stage} />
         )}
         {job.industry && (
-          <span className="bg-zinc-800 text-zinc-300 text-xs px-2 py-1 rounded-md flex items-center gap-1 border border-zinc-700">
-            <Briefcase className="w-3 h-3" /> {job.industry}
-          </span>
+          <Badge icon={<Briefcase className="w-3 h-3" />} label={job.industry} />
         )}
       </div>
 
-      {(job.search_role || job.search_location) && (
-        <div className="flex flex-wrap gap-2 mb-4 text-[11px] uppercase tracking-widest">
-          {job.search_role && (
-            <span className="px-2 py-1 rounded-md border border-white/10 bg-white/5 text-zinc-300">
-              Role: {job.search_role}
-            </span>
-          )}
-          {job.search_location && (
-            <span className="px-2 py-1 rounded-md border border-white/10 bg-white/5 text-zinc-300">
-              Search: {job.search_location}
-            </span>
-          )}
-        </div>
-      )}
-
       {job.description_summary && (
-        <p className="text-zinc-400 text-sm mb-4 leading-relaxed bg-black/20 p-3 rounded-lg border border-white/5 italic">
-          &quot;{job.description_summary}&quot;
-        </p>
-      )}
-
-      <a 
-        href={job.url} 
-        target="_blank" 
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors bg-blue-400/10 px-4 py-1.5 rounded-lg border border-blue-400/20 w-full justify-center font-medium"
-      >
-        View Posting <ExternalLink className="w-3 h-3" />
-      </a>
-
-      {job.interaction_status === 'dismissed' ? (
-        <button
-          onClick={() => onAction(job.id, 'clear')}
-          disabled={isPending('clear')}
-          className="mt-3 inline-flex items-center justify-center gap-2 text-sm text-zinc-200 hover:text-white transition-colors bg-zinc-700/70 px-4 py-2 rounded-lg border border-zinc-600/50 w-full font-medium disabled:opacity-60"
-        >
-          <RotateCcw className="w-4 h-4" /> Restore to New
-        </button>
-      ) : (
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <button
-            onClick={() => onAction(job.id, 'saved')}
-            disabled={isPending('saved')}
-            className={`inline-flex items-center justify-center gap-2 text-xs px-3 py-2 rounded-lg border transition-colors disabled:opacity-60 ${
-              job.interaction_status === 'saved'
-                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                : 'bg-zinc-900 text-zinc-300 border-white/10 hover:bg-zinc-800'
-            }`}
-          >
-            <Bookmark className="w-3 h-3" /> Save
-          </button>
-          <button
-            onClick={() => onAction(job.id, 'applied')}
-            disabled={isPending('applied')}
-            className={`inline-flex items-center justify-center gap-2 text-xs px-3 py-2 rounded-lg border transition-colors disabled:opacity-60 ${
-              job.interaction_status === 'applied'
-                ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
-                : 'bg-zinc-900 text-zinc-300 border-white/10 hover:bg-zinc-800'
-            }`}
-          >
-            <Send className="w-3 h-3" /> Applied
-          </button>
-          <button
-            onClick={() => onAction(job.id, 'interviewing')}
-            disabled={isPending('interviewing')}
-            className={`inline-flex items-center justify-center gap-2 text-xs px-3 py-2 rounded-lg border transition-colors disabled:opacity-60 ${
-              job.interaction_status === 'interviewing'
-                ? 'bg-violet-500/20 text-violet-300 border-violet-500/40'
-                : 'bg-zinc-900 text-zinc-300 border-white/10 hover:bg-zinc-800'
-            }`}
-          >
-            <Handshake className="w-3 h-3" /> Interview
-          </button>
-          <button
-            onClick={() => onAction(job.id, 'dismissed')}
-            disabled={isPending('dismissed')}
-            className="inline-flex items-center justify-center gap-2 text-xs px-3 py-2 rounded-lg border transition-colors disabled:opacity-60 bg-zinc-900 text-zinc-300 border-white/10 hover:bg-zinc-800"
-          >
-            <XCircle className="w-3 h-3" /> Dismiss
-          </button>
+        <div className="relative mb-6 flex-1">
+          <p className="text-zinc-400 text-[13px] leading-relaxed line-clamp-3 italic pl-3 border-l-2 border-white/5">
+            &quot;{job.description_summary}&quot;
+          </p>
         </div>
       )}
-      
-      <div className="absolute top-0 right-0 p-2 opacity-20 pointer-events-none uppercase text-[10px] tracking-widest font-black text-white/50">
-        Source: {job.source}
+
+      <div className="mt-auto pt-4 border-t border-white/5 flex items-center justify-between">
+        <span className="text-[10px] font-bold font-mono uppercase tracking-widest text-zinc-500">
+          {job.source}
+        </span>
+        <a 
+          href={job.url} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-white hover:underline transition-all group/link"
+        >
+          View Role <ArrowUpRight className="w-3.5 h-3.5 group-hover/link:translate-x-0.5 group-hover/link:-translate-y-0.5 transition-transform" />
+        </a>
       </div>
     </div>
+  );
+}
+
+function Badge({ icon, label }: { icon: React.ReactNode, label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white/5 text-zinc-300 border border-white/10 whitespace-nowrap">
+      {icon}
+      {label}
+    </span>
   );
 }

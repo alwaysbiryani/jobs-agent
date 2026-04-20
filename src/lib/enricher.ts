@@ -1,25 +1,11 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import * as cheerio from 'cheerio';
-import { z } from 'zod';
 
-const geminiApiKey = process.env.GEMINI_API_KEY;
-const genAI = geminiApiKey ? new GoogleGenerativeAI(geminiApiKey) : null;
-
-const enrichmentSchema = z.object({
-  industry: z.string().optional(),
-  company_size: z.string().optional(),
-  company_stage: z.string().optional(),
-  summary: z.string().optional(),
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 export async function enrichJob(url: string) {
   try {
-    if (!genAI) {
-      return null;
-    }
-
     const response = await fetch(url, {
-      signal: AbortSignal.timeout(12_000),
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
       },
@@ -57,9 +43,7 @@ export async function enrichJob(url: string) {
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
     
-    const parsed = JSON.parse(jsonMatch[0]);
-    const validated = enrichmentSchema.safeParse(parsed);
-    return validated.success ? validated.data : null;
+    return JSON.parse(jsonMatch[0]);
   } catch (error) {
     console.error(`Error enriching job at ${url}:`, error);
     return null;

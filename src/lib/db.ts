@@ -1,29 +1,13 @@
-import Database from 'better-sqlite3';
+import { neon } from '@neondatabase/serverless';
 import { Job, JobStatus, JobView, UserPreferences } from './types';
-import path from 'path';
 
-type SaveJobInput = Pick<Job, 'title' | 'company' | 'location' | 'url' | 'source'> &
-  Partial<
-    Pick<
-      Job,
-      | 'posted_at'
-      | 'industry'
-      | 'company_size'
-      | 'company_stage'
-      | 'description_summary'
-      | 'search_role'
-      | 'search_location'
-    >
-  >;
+// Initialize Neon SQL client
+const sql = neon(process.env.DATABASE_URL!);
 
-let db: Database.Database;
-
-function getDb() {
-  if (!db) {
-    const dbPath = path.resolve(process.cwd(), 'jobs.db');
-    db = new Database(dbPath);
-
-    db.exec(`
+export async function createTables() {
+  try {
+    // Jobs Table
+    await sql(`
       CREATE TABLE IF NOT EXISTS jobs (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
@@ -32,7 +16,7 @@ function getDb() {
         url TEXT UNIQUE NOT NULL,
         source TEXT NOT NULL,
         posted_at TEXT,
-        discovered_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         industry TEXT,
         company_size TEXT,
         company_stage TEXT,
@@ -40,243 +24,166 @@ function getDb() {
         search_role TEXT,
         search_location TEXT
       );
+    `);
 
+    // Job Interactions Table
+    await sql(`
       CREATE TABLE IF NOT EXISTS job_interactions (
         user_id TEXT NOT NULL,
         job_id TEXT REFERENCES jobs(id) ON DELETE CASCADE,
         status TEXT NOT NULL,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (user_id, job_id)
       );
+    `);
 
+    // User Preferences Table
+    await sql(`
       CREATE TABLE IF NOT EXISTS user_preferences (
         user_id TEXT PRIMARY KEY,
-        roles TEXT NOT NULL DEFAULT '[]',
-        locations TEXT NOT NULL DEFAULT '[]',
-        work_modes TEXT NOT NULL DEFAULT '[]',
-        seniority TEXT NOT NULL DEFAULT '[]',
-        must_have_keywords TEXT NOT NULL DEFAULT '[]',
-        excluded_keywords TEXT NOT NULL DEFAULT '[]',
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        roles JSONB NOT NULL DEFAULT '[]',
+        locations JSONB NOT NULL DEFAULT '[]',
+        work_modes JSONB NOT NULL DEFAULT '[]',
+        seniority JSONB NOT NULL DEFAULT '[]',
+        must_have_keywords JSONB NOT NULL DEFAULT '[]',
+        excluded_keywords JSONB NOT NULL DEFAULT '[]',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
-  }
-  return db;
-}
-
-function parseJsonArray(value: unknown): string[] {
-  if (typeof value !== 'string') return [];
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item): item is string => typeof item === 'string');
-  } catch {
-    return [];
+    
+    console.log('Database tables verified/created successfully.');
+  } catch (error) {
+    console.error('Error creating database tables:', error);
   }
 }
 
-export async function createTables() {
-  getDb();
-}
-
-export async function saveJob(job: SaveJobInput) {
-  const sqlite = getDb();
+export async function saveJob(job: Partial<Job>) {
   const id = crypto.randomUUID();
-
-  const stmt = sqlite.prepare(`
+  
+  const result = await sql(`
     INSERT INTO jobs (
-      id, title, company, location, url, source, posted_at,
+      id, title, company, location, url, source, posted_at, 
       industry, company_size, company_stage, description_summary, search_role, search_location
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
     ON CONFLICT (url) DO UPDATE SET
-      title = excluded.title,
-      company = excluded.company,
-      location = excluded.location,
-      search_role = COALESCE(jobs.search_role, excluded.search_role),
-      search_location = COALESCE(jobs.search_location, excluded.search_location),
-      industry = COALESCE(jobs.industry, excluded.industry),
-      company_size = COALESCE(jobs.company_size, excluded.company_size),
-      company_stage = COALESCE(jobs.company_stage, excluded.company_stage),
-      description_summary = COALESCE(jobs.description_summary, excluded.description_summary)
-  `);
+      title = EXCLUDED.title,
+      company = EXCLUDED.company,
+      location = EXCLUDED.location,
+      search_role = COALESCE(jobs.search_role, EXCLUDED.search_role),
+      search_location = COALESCE(jobs.search_location, EXCLUDED.search_location),
+      industry = COALESCE(jobs.industry, EXCLUDED.industry),
+      company_size = COALESCE(jobs.company_size, EXCLUDED.company_size),
+      company_stage = COALESCE(jobs.company_stage, EXCLUDED.company_stage),
+      description_summary = COALESCE(jobs.description_summary, EXCLUDED.description_summary)
+    RETURNING id
+  `, [
+    id, job.title, job.company, job.location, job.url, job.source, job.posted_at || null,
+    job.industry || null, job.company_size || null, job.company_stage || null, 
+    job.description_summary || null, job.search_role || null, job.search_location || null
+  ]);
 
-  stmt.run(
-    id,
-    job.title,
-    job.company,
-    job.location,
-    job.url,
-    job.source,
-    job.posted_at || null,
-    job.industry || null,
-    job.company_size || null,
-    job.company_stage || null,
-    job.description_summary || null,
-    job.search_role || null,
-    job.search_location || null
-  );
+  return { rows: result };
+}
 
-  const result = sqlite.prepare('SELECT id FROM jobs WHERE url = ?').get(job.url) as { id: string };
-  return { rows: [result] };
+export async function setJobStatus(userId: string, jobId: string, status: JobStatus) {
+  return await sql(`
+    INSERT INTO job_interactions (user_id, job_id, status)
+    VALUES ($1, $2, $3)
+    ON CONFLICT (user_id, job_id) DO UPDATE SET status = EXCLUDED.status, created_at = CURRENT_TIMESTAMP
+  `, [userId, jobId, status]);
+}
+
+export async function clearJobStatus(userId: string, jobId: string) {
+  return await sql(`
+    DELETE FROM job_interactions
+    WHERE user_id = $1 AND job_id = $2
+  `, [userId, jobId]);
+}
+
+export async function saveJobInteraction(userId: string, jobId: string, status: 'dismissed' | 'saved' | 'seen' | 'applied' | 'interviewing') {
+  return setJobStatus(userId, jobId, status);
 }
 
 export async function getJobs(userId: string, view: JobView = 'new') {
-  const sqlite = getDb();
-
   const queryByView: Record<JobView, string> = {
     new: `
       SELECT j.*, i.status AS interaction_status
       FROM jobs j
-      LEFT JOIN job_interactions i ON j.id = i.job_id AND i.user_id = ?
+      LEFT JOIN job_interactions i ON j.id = i.job_id AND i.user_id = $1
       WHERE i.status IS NULL OR i.status = 'seen'
-      ORDER BY j.discovered_at DESC
-      LIMIT 100
+      ORDER BY j.discovered_at DESC LIMIT 100
     `,
     saved: `
       SELECT j.*, i.status AS interaction_status
       FROM jobs j
       JOIN job_interactions i ON j.id = i.job_id
-      WHERE i.user_id = ? AND i.status = 'saved'
-      ORDER BY i.created_at DESC
-      LIMIT 100
+      WHERE i.user_id = $1 AND i.status = 'saved'
+      ORDER BY i.created_at DESC LIMIT 100
     `,
     applied: `
       SELECT j.*, i.status AS interaction_status
       FROM jobs j
       JOIN job_interactions i ON j.id = i.job_id
-      WHERE i.user_id = ? AND i.status = 'applied'
-      ORDER BY i.created_at DESC
-      LIMIT 100
+      WHERE i.user_id = $1 AND i.status = 'applied'
+      ORDER BY i.created_at DESC LIMIT 100
     `,
     interviewing: `
       SELECT j.*, i.status AS interaction_status
       FROM jobs j
       JOIN job_interactions i ON j.id = i.job_id
-      WHERE i.user_id = ? AND i.status = 'interviewing'
-      ORDER BY i.created_at DESC
-      LIMIT 100
+      WHERE i.user_id = $1 AND i.status = 'interviewing'
+      ORDER BY i.created_at DESC LIMIT 100
     `,
     dismissed: `
       SELECT j.*, i.status AS interaction_status
       FROM jobs j
       JOIN job_interactions i ON j.id = i.job_id
-      WHERE i.user_id = ? AND i.status = 'dismissed'
-      ORDER BY i.created_at DESC
-      LIMIT 100
+      WHERE i.user_id = $1 AND i.status = 'dismissed'
+      ORDER BY i.created_at DESC LIMIT 100
     `,
     all: `
       SELECT j.*, i.status AS interaction_status
       FROM jobs j
-      LEFT JOIN job_interactions i ON j.id = i.job_id AND i.user_id = ?
-      ORDER BY j.discovered_at DESC
-      LIMIT 200
+      LEFT JOIN job_interactions i ON j.id = i.job_id AND i.user_id = $1
+      ORDER BY j.discovered_at DESC LIMIT 200
     `,
   };
 
-  return sqlite.prepare(queryByView[view]).all(userId);
-}
-
-export async function markAsSeen(userId: string, jobId: string) {
-  const sqlite = getDb();
-  const stmt = sqlite.prepare(`
-    INSERT INTO job_interactions (user_id, job_id, status)
-    VALUES (?, ?, 'seen')
-    ON CONFLICT (user_id, job_id) DO UPDATE SET status = 'seen', created_at = CURRENT_TIMESTAMP
-  `);
-  return stmt.run(userId, jobId);
-}
-
-export async function setJobStatus(userId: string, jobId: string, status: JobStatus) {
-  const sqlite = getDb();
-  const stmt = sqlite.prepare(`
-    INSERT INTO job_interactions (user_id, job_id, status)
-    VALUES (?, ?, ?)
-    ON CONFLICT (user_id, job_id) DO UPDATE SET status = excluded.status, created_at = CURRENT_TIMESTAMP
-  `);
-  return stmt.run(userId, jobId, status);
-}
-
-export async function clearJobStatus(userId: string, jobId: string) {
-  const sqlite = getDb();
-  const stmt = sqlite.prepare(`
-    DELETE FROM job_interactions
-    WHERE user_id = ? AND job_id = ?
-  `);
-  return stmt.run(userId, jobId);
-}
-
-export async function dismissJob(userId: string, jobId: string) {
-  return setJobStatus(userId, jobId, 'dismissed');
+  return await sql(queryByView[view], [userId]);
 }
 
 export async function getUserPreferences(userId: string): Promise<UserPreferences | null> {
-  const sqlite = getDb();
-  const row = sqlite
-    .prepare(`
-      SELECT user_id, roles, locations, work_modes, seniority, must_have_keywords, excluded_keywords, updated_at
-      FROM user_preferences
-      WHERE user_id = ?
-      LIMIT 1
-    `)
-    .get(userId) as
-    | {
-        user_id: string;
-        roles: string;
-        locations: string;
-        work_modes: string;
-        seniority: string;
-        must_have_keywords: string;
-        excluded_keywords: string;
-        updated_at: string;
-      }
-    | undefined;
+  const rows = await sql(`
+    SELECT * FROM user_preferences WHERE user_id = $1 LIMIT 1
+  `, [userId]);
 
-  if (!row) return null;
-
-  return {
-    user_id: row.user_id,
-    roles: parseJsonArray(row.roles),
-    locations: parseJsonArray(row.locations),
-    work_modes: parseJsonArray(row.work_modes),
-    seniority: parseJsonArray(row.seniority),
-    must_have_keywords: parseJsonArray(row.must_have_keywords),
-    excluded_keywords: parseJsonArray(row.excluded_keywords),
-    updated_at: row.updated_at,
-  };
+  if (rows.length === 0) return null;
+  return rows[0] as UserPreferences;
 }
 
-export async function upsertUserPreferences(
-  userId: string,
-  preferences: Omit<UserPreferences, 'user_id' | 'updated_at'>
-) {
-  const sqlite = getDb();
-
-  const stmt = sqlite.prepare(`
+export async function upsertUserPreferences(userId: string, preferences: Partial<UserPreferences>) {
+  return await sql(`
     INSERT INTO user_preferences (
       user_id, roles, locations, work_modes, seniority, must_have_keywords, excluded_keywords, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
     ON CONFLICT (user_id) DO UPDATE SET
-      roles = excluded.roles,
-      locations = excluded.locations,
-      work_modes = excluded.work_modes,
-      seniority = excluded.seniority,
-      must_have_keywords = excluded.must_have_keywords,
-      excluded_keywords = excluded.excluded_keywords,
+      roles = EXCLUDED.roles,
+      locations = EXCLUDED.locations,
+      work_modes = EXCLUDED.work_modes,
+      seniority = EXCLUDED.seniority,
+      must_have_keywords = EXCLUDED.must_have_keywords,
+      excluded_keywords = EXCLUDED.excluded_keywords,
       updated_at = CURRENT_TIMESTAMP
-  `);
-
-  stmt.run(
-    userId,
-    JSON.stringify(preferences.roles),
-    JSON.stringify(preferences.locations),
-    JSON.stringify(preferences.work_modes),
-    JSON.stringify(preferences.seniority),
-    JSON.stringify(preferences.must_have_keywords),
-    JSON.stringify(preferences.excluded_keywords)
-  );
-
-  const row = await getUserPreferences(userId);
-  return { rows: row ? [row] : [] };
+    RETURNING *
+  `, [
+    userId, 
+    JSON.stringify(preferences.roles || []),
+    JSON.stringify(preferences.locations || []),
+    JSON.stringify(preferences.work_modes || []),
+    JSON.stringify(preferences.seniority || []),
+    JSON.stringify(preferences.must_have_keywords || []),
+    JSON.stringify(preferences.excluded_keywords || [])
+  ]);
 }
