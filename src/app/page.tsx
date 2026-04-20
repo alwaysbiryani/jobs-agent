@@ -349,6 +349,11 @@ export default function Home() {
   }, [fetchJobs, activeSearch]);
 
   const handleSync = useCallback(async () => {
+    if (!searchRole.trim() || !searchLocation.trim()) {
+      setSyncError("Please enter both role and location before scanning.");
+      return;
+    }
+
     setSyncing(true);
     setSyncError(null);
     setSyncStats(null);
@@ -500,6 +505,7 @@ export default function Home() {
                     className="bg-transparent border-none p-0 text-sm text-white placeholder:text-zinc-700 outline-none w-full font-bold"
                     value={searchRole}
                     onChange={e => setSearchRole(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && handleSync()}
                   />
                 </div>
                 <div className="flex-1 flex items-center gap-3 px-4 py-3 bg-white/5 rounded-xl border border-white/5 group focus-within:border-white/40 transition-colors">
@@ -510,11 +516,12 @@ export default function Home() {
                     className="bg-transparent border-none p-0 text-sm text-white placeholder:text-zinc-700 outline-none w-full font-bold"
                     value={searchLocation}
                     onChange={e => setSearchLocation(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && handleSync()}
                   />
                 </div>
                 <button
                   onClick={handleSync}
-                  disabled={syncing}
+                  disabled={syncing || !searchRole.trim() || !searchLocation.trim()}
                   className="bg-white text-black px-8 py-3 rounded-xl font-black flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-zinc-200 active:scale-95 transition-all"
                 >
                   {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}

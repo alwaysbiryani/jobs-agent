@@ -12,6 +12,10 @@ type SearchListing = {
   snippet?: string;
 };
 
+type RankedListing = SearchListing & {
+  relevanceScore: number;
+};
+
 function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -64,6 +68,38 @@ function calcRelevanceScore(
   if (link.includes('/jobs') || link.includes('/careers')) score += 1;
 
   return score;
+}
+
+function rankListings(
+  listings: SearchListing[],
+  roleTokens: string[],
+  locationTokens: string[]
+): RankedListing[] {
+  const ranked = listings
+    .map(item => ({ ...item, relevanceScore: calcRelevanceScore(item, roleTokens, locationTokens) }))
+    .sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+  const strict = ranked.filter(item => item.relevanceScore >= 3);
+  if (strict.length > 0) return strict;
+
+  // Never hard-fail at ranking time if we still have potentially useful leads.
+  // Keep top candidates with non-negative signal to reduce false "zero result" outcomes.
+  return ranked.filter(item => item.relevanceScore >= 0).slice(0, 25);
+}
+
+function extractCompany(title: string) {
+  const patterns = [
+    / at ([^-|]+)/i,
+    /^([^-|]+)\s+(?:is\s+)?hiring/i,
+    / - ([^-|]+)$/
+  ];
+
+  for (const pattern of patterns) {
+    const match = title.match(pattern);
+    if (match?.[1]) return match[1].trim();
+  }
+
+  return 'Unknown';
 }
 
 export async function GET(request: Request) {
@@ -126,10 +162,7 @@ export async function GET(request: Request) {
 
     // Deduplicate
     const uniqueListings = Array.from(new Map(results.filter(item => !!item.link).map(item => [item.link, item])).values());
-    const rankedListings = uniqueListings
-      .map(item => ({ ...item, relevanceScore: calcRelevanceScore(item, roleTokens, locationTokens) }))
-      .filter(item => item.relevanceScore >= 3)
-      .sort((a, b) => b.relevanceScore - a.relevanceScore);
+    const rankedListings = rankListings(uniqueListings, roleTokens, locationTokens);
 
     console.log(`Unique listings found: ${uniqueListings.length}`);
     console.log(`Relevant listings after ranking: ${rankedListings.length}`);
@@ -150,8 +183,12 @@ export async function GET(request: Request) {
     for (const listing of rankedListings.slice(0, 15)) {
       const safeTitle = listing.title || 'Unknown Role';
       const safeLink = listing.link || '';
-      const companyMatch = safeTitle.match(/at\s+(.*?)(?=\s+|$)/) || safeTitle.match(/(.*?)\s+Job/) || [null, safeTitle.split(' - ')[1] || 'Unknown'];
-      const company = companyMatch[1] || 'Unknown';
+      const company = extractCompany(safeTitle);
+
+      if (!safeLink) {
+        console.log(`Skipping result with missing link: ${safeTitle}`);
+        continue;
+      }
 
       if (AGENT_CONFIG.excludedCompanies.some(ex => company.toLowerCase().includes(ex.toLowerCase()))) {
         console.log(`Skipping excluded company: ${company}`);
@@ -173,15 +210,15 @@ export async function GET(request: Request) {
       const jobData = {
         title: safeTitle.split(' - ')[0],
         company: company,
-        location: location,
+        location: locationParam,
         url: safeLink,
         source: parseSource(safeLink),
         industry: metadata?.industry,
         company_size: metadata?.company_size,
         company_stage: metadata?.company_stage,
         description_summary: metadata?.summary,
-        search_role: role,
-        search_location: location
+        search_role: roleParam,
+        search_location: locationParam
       };
 
       await saveJob(jobData);
