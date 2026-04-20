@@ -1,19 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
+
+const USER_ID_KEY = 'jobs_agent_user_id';
 
 export function useUserId() {
-  const [userId, setUserId] = useState<string | null>(null);
+  return useMemo(() => {
+    if (typeof window === 'undefined') return null;
 
-  useEffect(() => {
-    // Check localStorage once on mount
-    let id = localStorage.getItem('jobs_agent_user_id');
-    
-    if (!id) {
-      id = crypto.randomUUID();
-      localStorage.setItem('jobs_agent_user_id', id);
-    }
-    
-    setUserId(id);
+    const existing = localStorage.getItem(USER_ID_KEY);
+    if (existing) return existing;
+
+    const generated = crypto.randomUUID();
+    localStorage.setItem(USER_ID_KEY, generated);
+    return generated;
   }, []);
-
-  return userId;
 }

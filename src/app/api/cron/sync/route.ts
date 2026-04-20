@@ -1,111 +1,209 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { createTables, saveJob } from '@/lib/db';
 import { searchJobsWithKey, parseSource } from '@/lib/scout';
 import { enrichJobWithKey } from '@/lib/enricher';
 import { AGENT_CONFIG } from '@/lib/config';
 
-export const maxDuration = 300; // 5 minutes for enrichment
+export const maxDuration = 300;
+
+const syncSchema = z.object({
+  role: z.string().min(2).max(120).optional(),
+  location: z.string().min(2).max(120).optional(),
+  customSites: z.array(z.string()).max(12).optional().default([]),
+});
+
+function hasSyncAuthorization(request: Request) {
+  const expected = process.env.CRON_SECRET;
+  if (!expected) return true;
+
+  const provided = request.headers.get('x-cron-secret');
+  if (provided === expected) return true;
+
+  // Allow browser-originated interactive scans while still requiring secret
+  // for server-to-server or cron-style invocations.
+  const origin = request.headers.get('origin');
+  return Boolean(origin);
+}
+
+function sanitizeSite(site: string) {
+  const trimmed = site.trim().toLowerCase();
+  const bare = trimmed.startsWith('site:') ? trimmed.slice(5) : trimmed;
+  const validDomain = /^[a-z0-9.-]+\.[a-z]{2,}$/.test(bare);
+  if (!validDomain) return null;
+  return `site:${bare}`;
+}
+
+function normalizeRole(roleParam: string) {
+  return AGENT_CONFIG.synonyms[roleParam] || (roleParam.startsWith('"') ? roleParam : `"${roleParam}"`);
+}
+
+function normalizeLocation(locationParam: string) {
+  const locationMap = AGENT_CONFIG.locationSynonyms;
+  return locationMap[locationParam] || (locationParam.startsWith('"') ? locationParam : `"${locationParam}"`);
+}
+
+function scoreListing(title: string, role: string) {
+  const titleLower = title.toLowerCase();
+  const terms = role.toLowerCase().replace(/["()]/g, '').split(/\s+or\s+|\s+/).filter(Boolean);
+  return terms.reduce((score, term) => score + (titleLower.includes(term) ? 1 : 0), 0);
+}
+
+function extractCompany(title: string) {
+  const patterns = [/\sat\s([^|\-•]+)/i, /^([^\-•]+)\s[-•]/, /\|\s([^|]+)$/];
+  for (const pattern of patterns) {
+    const match = title.match(pattern);
+    if (match?.[1]) return match[1].trim();
+  }
+  return 'Unknown';
+}
+
+function getSearchAfterDate() {
+  const days = Number(process.env.SEARCH_LOOKBACK_DAYS || '14');
+  const target = new Date(Date.now() - Math.max(days, 1) * 24 * 60 * 60 * 1000);
+  return target.toISOString().slice(0, 10);
+}
+
+async function runSync({
+  roleParam,
+  locationParam,
+  customSites,
+  serperKey,
+  geminiKey,
+}: {
+  roleParam: string;
+  locationParam: string;
+  customSites: string[];
+  serperKey: string;
+  geminiKey: string;
+}) {
+  const role = normalizeRole(roleParam);
+  const location = normalizeLocation(locationParam);
+  await createTables();
+
+  const safeCustomSites = customSites.map(sanitizeSite).filter((site): site is string => Boolean(site));
+  const sites = Array.from(new Set([...AGENT_CONFIG.searchSites, ...safeCustomSites]));
+  const afterDate = getSearchAfterDate();
+
+  const rawResults: Array<{ title: string; link: string; snippet?: string }> = [];
+  for (const site of sites) {
+    const strictQuery = `${site} ${role} ${location} after:${afterDate}`;
+    const strictResults = await searchJobsWithKey(strictQuery, serperKey, true);
+
+    if (strictResults.length > 0) {
+      rawResults.push(...strictResults);
+      continue;
+    }
+
+    const fallbackQuery = `${site} ${role} ${location}`;
+    const fallbackResults = await searchJobsWithKey(fallbackQuery, serperKey, false);
+    rawResults.push(...fallbackResults);
+  }
+
+  const deduped = Array.from(new Map(rawResults.map((item) => [item.link, item])).values())
+    .filter((item) => item?.link && item?.title)
+    .sort((a, b) => scoreListing(b.title, role) - scoreListing(a.title, role));
+
+  if (deduped.length === 0) {
+    return { success: false, error: `No jobs found for ${roleParam} in ${locationParam}. Try broader role/location terms.` };
+  }
+
+  const syncedJobs = [];
+  for (const listing of deduped.slice(0, 25)) {
+    const company = extractCompany(listing.title);
+
+    if (AGENT_CONFIG.excludedCompanies.some((ex) => company.toLowerCase().includes(ex.toLowerCase()))) {
+      continue;
+    }
+
+    if (AGENT_CONFIG.includedCompanies.length > 0 && !AGENT_CONFIG.includedCompanies.some((inc) => company.toLowerCase().includes(inc.toLowerCase()))) {
+      continue;
+    }
+
+    const metadata = await enrichJobWithKey(listing.link, geminiKey);
+
+    const jobData = {
+      title: listing.title.split(' - ')[0].trim(),
+      company,
+      location: locationParam,
+      url: listing.link,
+      source: parseSource(listing.link),
+      industry: metadata?.industry,
+      company_size: metadata?.company_size,
+      company_stage: metadata?.company_stage,
+      description_summary: metadata?.summary,
+      search_role: roleParam,
+      search_location: locationParam,
+    };
+
+    await saveJob(jobData);
+    syncedJobs.push(jobData);
+  }
+
+  return { success: true, count: syncedJobs.length, jobs: syncedJobs };
+}
 
 export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const checkOnly = searchParams.get('check') === 'true';
+
+  const serperKey = process.env.SERPER_API_KEY || request.headers.get('x-serper-key') || '';
+  const geminiKey = process.env.GEMINI_API_KEY || request.headers.get('x-gemini-key') || '';
+
+  if (!serperKey || !geminiKey) {
+    const error = `Missing API keys: ${!serperKey ? 'SERPER ' : ''}${!geminiKey ? 'GEMINI' : ''}`;
+    return NextResponse.json({ success: false, error }, { status: checkOnly ? 200 : 400 });
+  }
+
+  if (checkOnly) return NextResponse.json({ success: true });
+
+  const cronToken = searchParams.get('token');
+  if (process.env.CRON_SECRET && cronToken !== process.env.CRON_SECRET) {
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const roleParam = searchParams.get('role') || AGENT_CONFIG.roles[0];
+  const locationParam = searchParams.get('location') || AGENT_CONFIG.locations[0];
+  const customSites = (searchParams.get('customSites') || '')
+    .split(',')
+    .map((site) => site.trim())
+    .filter(Boolean);
+
+  const result = await runSync({ roleParam, locationParam, customSites, serperKey, geminiKey });
+  return NextResponse.json(result, { status: result.success ? 200 : 404 });
+}
+
+export async function POST(request: Request) {
+  if (!hasSyncAuthorization(request)) {
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
-    const { searchParams } = new URL(request.url);
-    const headers = request.headers;
-    const checkOnly = searchParams.get('check') === 'true';
+    const serperKey = process.env.SERPER_API_KEY || request.headers.get('x-serper-key') || '';
+    const geminiKey = process.env.GEMINI_API_KEY || request.headers.get('x-gemini-key') || '';
 
-    // BYOK: accept user-supplied keys from headers as fallbacks
-    const serperKey = process.env.SERPER_API_KEY || headers.get('x-serper-key') || '';
-    const geminiKey = process.env.GEMINI_API_KEY || headers.get('x-gemini-key') || '';
-
-    // Check keys
     if (!serperKey || !geminiKey) {
       const error = `Missing API keys: ${!serperKey ? 'SERPER ' : ''}${!geminiKey ? 'GEMINI' : ''}`;
-      if (checkOnly) return NextResponse.json({ success: false, error });
-      throw new Error(error);
-    }
-    if (checkOnly) return NextResponse.json({ success: true });
-
-    const roleParam = searchParams.get('role') || AGENT_CONFIG.roles[0];
-    const locationParam = searchParams.get('location') || AGENT_CONFIG.locations[0];
-
-    // Broaden role using synonyms, avoiding double quotes if already present
-    const role = AGENT_CONFIG.synonyms[roleParam] ||
-                 (roleParam.startsWith('"') ? roleParam : `"${roleParam}"`);
-
-    // Expand location using config map, defaulting to quoted search
-    const location = (AGENT_CONFIG as any).locationSynonyms[locationParam] ||
-                    (locationParam.startsWith('"') ? locationParam : `"${locationParam}"`);
-
-    await createTables();
-
-    // Merge config sites with any user-supplied custom boards
-    const customSitesParam = searchParams.get('customSites');
-    const customSites = customSitesParam
-      ? customSitesParam.split(',').map(s => s.trim()).filter(Boolean)
-      : [];
-    const sites = [...AGENT_CONFIG.searchSites, ...customSites];
-
-    const results = [];
-    for (const site of sites) {
-      const query = `${site} ${role} ${location} after:${AGENT_CONFIG.searchAfterDate}`;
-      console.log(`Searching: ${query}`);
-      const listings = await searchJobsWithKey(query, serperKey);
-      console.log(`Found ${listings.length} results for ${site}`);
-      results.push(...listings);
+      return NextResponse.json({ success: false, error }, { status: 400 });
     }
 
-    // Deduplicate
-    const uniqueListings = Array.from(new Map(results.map(item => [item.link, item])).values());
-    console.log(`Unique listings found: ${uniqueListings.length}`);
-
-    if (uniqueListings.length === 0) {
-      return NextResponse.json({
-        success: false,
-        error: `No jobs found for ${role} in ${location}. Try broadening your search terms or checking your API limits.`
-      }, { status: 404 });
+    const payload = syncSchema.safeParse(await request.json());
+    if (!payload.success) {
+      return NextResponse.json({ success: false, error: 'Invalid sync payload', details: payload.error.flatten() }, { status: 400 });
     }
 
-    const syncedJobs = [];
-    for (const listing of uniqueListings.slice(0, 15)) {
-      const companyMatch = listing.title.match(/at\s+(.*?)(?=\s+|$)/) || listing.title.match(/(.*?)\s+Job/) || [null, listing.title.split(' - ')[1] || 'Unknown'];
-      const company = companyMatch[1] || 'Unknown';
+    const roleParam = payload.data.role || AGENT_CONFIG.roles[0];
+    const locationParam = payload.data.location || AGENT_CONFIG.locations[0];
 
-      if (AGENT_CONFIG.excludedCompanies.some(ex => company.toLowerCase().includes(ex.toLowerCase()))) {
-        console.log(`Skipping excluded company: ${company}`);
-        continue;
-      }
+    const result = await runSync({
+      roleParam,
+      locationParam,
+      customSites: payload.data.customSites,
+      serperKey,
+      geminiKey,
+    });
 
-      if (AGENT_CONFIG.includedCompanies.length > 0 && !AGENT_CONFIG.includedCompanies.some(inc => company.toLowerCase().includes(inc.toLowerCase()))) {
-        console.log(`Skipping non-included company: ${company}`);
-        continue;
-      }
-
-      console.log(`Enriching: ${listing.title} from ${listing.link}`);
-      const metadata = await enrichJobWithKey(listing.link, geminiKey);
-
-      if (!metadata) {
-        console.warn(`Failed to enrich job at ${listing.link}`);
-      }
-
-      const jobData = {
-        title: listing.title.split(' - ')[0],
-        company: company,
-        location: location,
-        url: listing.link,
-        source: parseSource(listing.link),
-        industry: metadata?.industry,
-        company_size: metadata?.company_size,
-        company_stage: metadata?.company_stage,
-        description_summary: metadata?.summary,
-        search_role: role,
-        search_location: location
-      };
-
-      await saveJob(jobData);
-      syncedJobs.push(jobData);
-    }
-
-    console.log(`Successfully synced ${syncedJobs.length} jobs.`);
-    return NextResponse.json({ success: true, count: syncedJobs.length, jobs: syncedJobs });
+    return NextResponse.json(result, { status: result.success ? 200 : 404 });
   } catch (error: unknown) {
     console.error('Sync error:', error);
     return NextResponse.json({ success: false, error: (error as Error).message }, { status: 500 });
