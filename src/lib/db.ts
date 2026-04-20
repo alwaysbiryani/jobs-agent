@@ -137,61 +137,73 @@ export async function saveJobInteraction(userId: string, jobId: string, status: 
 export async function getJobs(userId: string, view: JobView = 'new', role?: string, location?: string) {
   const sql = getSql();
   
-  const roleFilter = role && role !== 'all' ? `%${role}%` : null;
-  const locationFilter = location && location !== 'all' ? `%${location}%` : null;
+  const r = role && role !== 'all' ? `%${role}%` : null;
+  const l = location && location !== 'all' ? `%${location}%` : null;
 
-  const queryByView: Record<JobView, string> = {
-    new: `
-      SELECT j.*, i.status AS interaction_status
-      FROM jobs j
-      LEFT JOIN job_interactions i ON j.id = i.job_id AND i.user_id = $1
-      WHERE (i.status IS NULL OR i.status = 'seen')
-        ${roleFilter ? 'AND (j.title ILIKE $2 OR j.search_role ILIKE $2)' : ''}
-        ${locationFilter ? 'AND (j.location ILIKE $3 OR j.search_location ILIKE $3)' : ''}
-      ORDER BY j.discovered_at DESC LIMIT 100
-    `,
-    saved: `
+  if (view === 'saved') {
+    return await sql`
       SELECT j.*, i.status AS interaction_status
       FROM jobs j
       JOIN job_interactions i ON j.id = i.job_id
-      WHERE i.user_id = $1 AND i.status = 'saved'
-        ${roleFilter ? 'AND (j.title ILIKE $2 OR j.search_role ILIKE $2)' : ''}
-        ${locationFilter ? 'AND (j.location ILIKE $3 OR j.search_location ILIKE $3)' : ''}
+      WHERE i.user_id = ${userId} AND i.status = 'saved'
+        AND (${r}::text IS NULL OR j.title ILIKE ${r} OR j.search_role ILIKE ${r})
+        AND (${l}::text IS NULL OR j.location ILIKE ${l} OR j.search_location ILIKE ${l})
       ORDER BY i.created_at DESC LIMIT 100
-    `,
-    applied: `
+    `;
+  }
+
+  if (view === 'applied') {
+    return await sql`
       SELECT j.*, i.status AS interaction_status
       FROM jobs j
       JOIN job_interactions i ON j.id = i.job_id
-      WHERE i.user_id = $1 AND i.status = 'applied'
+      WHERE i.user_id = ${userId} AND i.status = 'applied'
       ORDER BY i.created_at DESC LIMIT 100
-    `,
-    interviewing: `
+    `;
+  }
+
+  if (view === 'interviewing') {
+    return await sql`
       SELECT j.*, i.status AS interaction_status
       FROM jobs j
       JOIN job_interactions i ON j.id = i.job_id
-      WHERE i.user_id = $1 AND i.status = 'interviewing'
+      WHERE i.user_id = ${userId} AND i.status = 'interviewing'
       ORDER BY i.created_at DESC LIMIT 100
-    `,
-    dismissed: `
+    `;
+  }
+
+  if (view === 'dismissed') {
+    return await sql`
       SELECT j.*, i.status AS interaction_status
       FROM jobs j
       JOIN job_interactions i ON j.id = i.job_id
-      WHERE i.user_id = $1 AND i.status = 'dismissed'
+      WHERE i.user_id = ${userId} AND i.status = 'dismissed'
       ORDER BY i.created_at DESC LIMIT 100
-    `,
-    all: `
+    `;
+  }
+
+  if (view === 'all') {
+    return await sql`
       SELECT j.*, i.status AS interaction_status
       FROM jobs j
-      LEFT JOIN job_interactions i ON j.id = i.job_id AND i.user_id = $1
+      LEFT JOIN job_interactions i ON j.id = i.job_id AND i.user_id = ${userId}
       WHERE 1=1
-      ${roleFilter ? 'AND (j.title ILIKE $2 OR j.search_role ILIKE $2)' : ''}
-      ${locationFilter ? 'AND (j.location ILIKE $3 OR j.search_location ILIKE $3)' : ''}
+        AND (${r}::text IS NULL OR j.title ILIKE ${r} OR j.search_role ILIKE ${r})
+        AND (${l}::text IS NULL OR j.location ILIKE ${l} OR j.search_location ILIKE ${l})
       ORDER BY j.discovered_at DESC LIMIT 200
-    `,
-  };
+    `;
+  }
 
-  return await sql(queryByView[view], [userId, roleFilter, locationFilter]);
+  // Default: 'new'
+  return await sql`
+    SELECT j.*, i.status AS interaction_status
+    FROM jobs j
+    LEFT JOIN job_interactions i ON j.id = i.job_id AND i.user_id = ${userId}
+    WHERE (i.status IS NULL OR i.status = 'seen')
+      AND (${r}::text IS NULL OR j.title ILIKE ${r} OR j.search_role ILIKE ${r})
+      AND (${l}::text IS NULL OR j.location ILIKE ${l} OR j.search_location ILIKE ${l})
+    ORDER BY j.discovered_at DESC LIMIT 100
+  `;
 }
 
 export async function getUserPreferences(userId: string): Promise<UserPreferences | null> {
